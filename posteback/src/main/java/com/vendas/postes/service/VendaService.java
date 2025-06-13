@@ -2,39 +2,42 @@ package com.vendas.postes.service;
 
 import com.vendas.postes.dto.ResumoVendasDTO;
 import com.vendas.postes.model.Despesa;
+import com.vendas.postes.model.Venda;
 import com.vendas.postes.repository.DespesaRepository;
-import com.vendas.postes.repository.ItemVendaRepository;
 import com.vendas.postes.repository.VendaRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
 public class VendaService {
 
     private final VendaRepository vendaRepository;
-    private final ItemVendaRepository itemVendaRepository;
     private final DespesaRepository despesaRepository;
 
     public ResumoVendasDTO calcularResumoVendas() {
-        // Buscar totais
-        BigDecimal totalVendaPostes = itemVendaRepository.calcularTotalVendaPostes();
-        if (totalVendaPostes == null) totalVendaPostes = BigDecimal.ZERO;
+        // Buscar todas as vendas
+        List<Venda> vendas = vendaRepository.findAll();
 
-        // Somar valores informados das vendas
-        BigDecimal totalFreteEletrons = vendaRepository.findAll().stream()
-                .map(v -> v.getTotalFreteEletrons() != null ? v.getTotalFreteEletrons() : BigDecimal.ZERO)
+        // Calcular totais das vendas
+        BigDecimal totalVendaPostes = vendas.stream()
+                .map(v -> v.getValorLoja().multiply(BigDecimal.valueOf(v.getQuantidade())))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        BigDecimal totalComissao = vendaRepository.findAll().stream()
-                .map(v -> v.getTotalComissao() != null ? v.getTotalComissao() : BigDecimal.ZERO)
+        BigDecimal totalFreteEletrons = vendas.stream()
+                .map(v -> v.getFreteEletrons() != null ? v.getFreteEletrons() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        BigDecimal valorTotalInformado = vendaRepository.findAll().stream()
-                .map(v -> v.getValorTotalInformado() != null ? v.getValorTotalInformado() : BigDecimal.ZERO)
+        BigDecimal totalValorVenda = vendas.stream()
+                .map(v -> v.getValorVenda() != null ? v.getValorVenda() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal totalValorExtra = vendas.stream()
+                .map(v -> v.getValorExtra() != null ? v.getValorExtra() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         // Calcular despesas
@@ -46,8 +49,8 @@ public class VendaService {
 
         BigDecimal totalDespesas = despesasFuncionario.add(outrasDespesas);
 
-        // Calcular lucro: Total_Venda_Poste - Valor_Total_Informado - Total_Despesas
-        BigDecimal lucro = totalVendaPostes.subtract(valorTotalInformado).subtract(totalDespesas);
+        // Calcular lucro: Total_Venda_Postes - Total_Valor_Venda - Total_Despesas - Total_Valor_Extra
+        BigDecimal lucro = totalVendaPostes.subtract(totalValorVenda).subtract(totalDespesas).subtract(totalValorExtra);
 
         // Distribuição de lucro
         // CÍCERO recebe 50% do lucro
@@ -63,8 +66,8 @@ public class VendaService {
         return new ResumoVendasDTO(
                 totalVendaPostes,
                 totalFreteEletrons,
-                totalComissao,
-                valorTotalInformado,
+                BigDecimal.ZERO, // totalComissao - removido
+                totalValorVenda,
                 despesasFuncionario,
                 outrasDespesas,
                 totalDespesas,
@@ -72,7 +75,8 @@ public class VendaService {
                 parteCicero,
                 parteGuilhermeJefferson,
                 parteGuilherme,
-                parteJefferson
+                parteJefferson,
+                totalValorExtra
         );
     }
 }

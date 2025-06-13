@@ -14,4 +14,12 @@ public interface VendaRepository extends JpaRepository<Venda, Long> {
 
     @Query("SELECT v FROM Venda v ORDER BY v.dataVenda DESC")
     List<Venda> findAllOrderByDataVendaDesc();
+
+    List<Venda> findByIndic(Venda.TipoIndicacao indic);
+
+    List<Venda> findByVendedorContainingIgnoreCase(String vendedor);
+
+    List<Venda> findByClienteContainingIgnoreCase(String cliente);
+
+    List<Venda> findByCidadeContainingIgnoreCase(String cidade);
 }

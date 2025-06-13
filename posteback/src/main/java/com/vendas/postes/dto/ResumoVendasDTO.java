@@ -13,7 +13,7 @@ public class ResumoVendasDTO {
     private BigDecimal totalVendaPostes;
     private BigDecimal totalFreteEletrons;
     private BigDecimal totalComissao;
-    private BigDecimal valorTotalInformado;
+    private BigDecimal valorTotalVendas;
     private BigDecimal despesasFuncionario;
     private BigDecimal outrasDespesas;
     private BigDecimal totalDespesas;
@@ -22,4 +22,5 @@ public class ResumoVendasDTO {
     private BigDecimal parteGuilhermeJefferson;
     private BigDecimal parteGuilherme;
     private BigDecimal parteJefferson;
+    private BigDecimal totalValorExtra;
 }
