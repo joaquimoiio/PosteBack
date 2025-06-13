@@ -1,6 +1,8 @@
 package com.vendas.postes.controller;
 
 import com.vendas.postes.dto.ResumoVendasDTO;
+import com.vendas.postes.dto.VendaCreateDTO;
+import com.vendas.postes.dto.VendaDTO;
 import com.vendas.postes.model.Venda;
 import com.vendas.postes.repository.VendaRepository;
 import com.vendas.postes.service.VendaService;
@@ -21,13 +23,13 @@ public class VendaController {
     private final VendaService vendaService;
 
     @GetMapping
-    public List<Venda> listarTodas() {
-        return vendaRepository.findAllOrderByDataVendaDesc();
+    public List<VendaDTO> listarTodas() {
+        return vendaService.listarTodasVendas();
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Venda> buscarPorId(@PathVariable Long id) {
-        Optional<Venda> venda = vendaRepository.findById(id);
+    public ResponseEntity<VendaDTO> buscarPorId(@PathVariable Long id) {
+        Optional<VendaDTO> venda = vendaService.buscarVendaPorId(id);
         return venda.map(ResponseEntity::ok).orElse(ResponseEntity.notFound().build());
     }
 
@@ -37,30 +39,32 @@ public class VendaController {
     }
 
     @PostMapping
-    public Venda criar(@RequestBody Venda venda) {
-        return vendaRepository.save(venda);
+    public ResponseEntity<VendaDTO> criar(@RequestBody VendaCreateDTO vendaCreateDTO) {
+        try {
+            VendaDTO vendaCriada = vendaService.criarVenda(vendaCreateDTO);
+            return ResponseEntity.ok(vendaCriada);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().build();
+        }
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Venda> atualizar(@PathVariable Long id, @RequestBody Venda vendaAtualizada) {
-        return vendaRepository.findById(id)
-                .map(venda -> {
-                    venda.setTotalFreteEletrons(vendaAtualizada.getTotalFreteEletrons());
-                    venda.setTotalComissao(vendaAtualizada.getTotalComissao());
-                    venda.setValorTotalInformado(vendaAtualizada.getValorTotalInformado());
-                    venda.setObservacoes(vendaAtualizada.getObservacoes());
-                    return ResponseEntity.ok(vendaRepository.save(venda));
-                })
-                .orElse(ResponseEntity.notFound().build());
+    public ResponseEntity<VendaDTO> atualizar(@PathVariable Long id, @RequestBody VendaDTO vendaAtualizada) {
+        try {
+            VendaDTO venda = vendaService.atualizarVenda(id, vendaAtualizada);
+            return ResponseEntity.ok(venda);
+        } catch (Exception e) {
+            return ResponseEntity.notFound().build();
+        }
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deletar(@PathVariable Long id) {
-        return vendaRepository.findById(id)
-                .map(venda -> {
-                    vendaRepository.delete(venda);
-                    return ResponseEntity.ok().build();
-                })
-                .orElse(ResponseEntity.notFound().build());
+        try {
+            vendaService.deletarVenda(id);
+            return ResponseEntity.ok().build();
+        } catch (Exception e) {
+            return ResponseEntity.notFound().build();
+        }
     }
 }

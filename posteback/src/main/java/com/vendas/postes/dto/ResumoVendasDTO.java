@@ -22,5 +22,5 @@ public class ResumoVendasDTO {
     private BigDecimal parteGuilhermeJefferson;
     private BigDecimal parteGuilherme;
     private BigDecimal parteJefferson;
-    private BigDecimal totalValorExtra;
+    private BigDecimal totalValorExtra; // Campo mantido para compatibilidade
 }

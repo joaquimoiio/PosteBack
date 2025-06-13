@@ -5,21 +5,24 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
 @Repository
 public interface VendaRepository extends JpaRepository<Venda, Long> {
-    List<Venda> findByDataVendaBetween(LocalDateTime inicio, LocalDateTime fim);
 
-    @Query("SELECT v FROM Venda v ORDER BY v.dataVenda DESC")
+    @Query("SELECT v FROM Venda v LEFT JOIN FETCH v.itens ORDER BY v.dataVenda DESC")
     List<Venda> findAllOrderByDataVendaDesc();
 
-    List<Venda> findByIndic(Venda.TipoIndicacao indic);
+    List<Venda> findByDataVendaBetween(LocalDateTime inicio, LocalDateTime fim);
 
-    List<Venda> findByVendedorContainingIgnoreCase(String vendedor);
+    @Query("SELECT SUM(v.totalFreteEletrons) FROM Venda v WHERE v.totalFreteEletrons IS NOT NULL")
+    BigDecimal calcularTotalFreteEletrons();
 
-    List<Venda> findByClienteContainingIgnoreCase(String cliente);
+    @Query("SELECT SUM(v.totalComissao) FROM Venda v WHERE v.totalComissao IS NOT NULL")
+    BigDecimal calcularTotalComissao();
 
-    List<Venda> findByCidadeContainingIgnoreCase(String cidade);
+    @Query("SELECT SUM(v.valorTotalInformado) FROM Venda v WHERE v.valorTotalInformado IS NOT NULL")
+    BigDecimal calcularTotalValorInformado();
 }

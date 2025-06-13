@@ -13,13 +13,8 @@ import java.time.LocalDateTime;
 public class VendaCreateDTO {
     private LocalDateTime dataVenda;
     private Integer quantidade;
-    private String indic;
-    private String vendedor;
-    private String cliente;
-    private String cidade;
-    private BigDecimal valorExtra;
+    private Long posteId;
     private BigDecimal freteEletrons;
     private BigDecimal valorVenda;
-    private Long posteId;
     private String observacoes;
 }
