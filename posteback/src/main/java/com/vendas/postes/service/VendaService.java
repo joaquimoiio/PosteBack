@@ -49,8 +49,7 @@ public class VendaService {
                 break;
 
             case V:
-                // Tipo V: poste, quantidade, frete, valor de venda
-                venda.setTotalFreteEletrons(vendaCreateDTO.getFreteEletrons());
+                // Tipo V: poste, quantidade, valor de venda (SEM frete)
                 venda.setValorTotalInformado(vendaCreateDTO.getValorVenda());
 
                 // Criar item da venda
@@ -73,9 +72,8 @@ public class VendaService {
                 break;
 
             case L:
-                // Tipo L: poste (sem considerar valor), quantidade, frete, valor de venda
+                // Tipo L: poste (referência), quantidade, frete (SEM valor de venda, SEM preço do poste)
                 venda.setTotalFreteEletrons(vendaCreateDTO.getFreteEletrons());
-                venda.setValorTotalInformado(vendaCreateDTO.getValorVenda());
 
                 // Criar item da venda (mas não considera o preço do poste para cálculos)
                 if (vendaCreateDTO.getPosteId() != null && vendaCreateDTO.getQuantidade() != null) {
@@ -94,16 +92,6 @@ public class VendaService {
                     itemVendaRepository.save(itemVenda);
                     return convertToDTO(venda);
                 }
-                break;
-
-            case C:
-                // Tipo C: Comissão
-                venda.setTotalComissao(vendaCreateDTO.getValorComissao());
-                break;
-
-            case F:
-                // Tipo F: Frete
-                venda.setTotalFreteEletrons(vendaCreateDTO.getFreteEletrons());
                 break;
         }
 
@@ -143,8 +131,6 @@ public class VendaService {
         Long totalVendasE = vendas.stream().filter(v -> v.getTipoVenda() == Venda.TipoVenda.E).count();
         Long totalVendasV = vendas.stream().filter(v -> v.getTipoVenda() == Venda.TipoVenda.V).count();
         Long totalVendasL = vendas.stream().filter(v -> v.getTipoVenda() == Venda.TipoVenda.L).count();
-        Long totalVendasC = vendas.stream().filter(v -> v.getTipoVenda() == Venda.TipoVenda.C).count();
-        Long totalVendasF = vendas.stream().filter(v -> v.getTipoVenda() == Venda.TipoVenda.F).count();
 
         // Calcular totais básicos (sem lógica de lucro)
         BigDecimal totalVendaPostes = vendas.stream()
@@ -153,11 +139,8 @@ public class VendaService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         BigDecimal totalFreteEletrons = vendas.stream()
+                .filter(v -> v.getTipoVenda() == Venda.TipoVenda.L) // Apenas tipo L tem frete agora
                 .map(v -> v.getTotalFreteEletrons() != null ? v.getTotalFreteEletrons() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        BigDecimal totalComissao = vendas.stream()
-                .map(v -> v.getTotalComissao() != null ? v.getTotalComissao() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         BigDecimal valorTotalVendas = vendas.stream()
@@ -170,25 +153,10 @@ public class VendaService {
                 .map(v -> v.getValorExtra() != null ? v.getValorExtra() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        BigDecimal valorTotalLivres = vendas.stream()
-                .filter(v -> v.getTipoVenda() == Venda.TipoVenda.L)
-                .map(v -> v.getValorTotalInformado() != null ? v.getValorTotalInformado() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        BigDecimal valorTotalComissoes = vendas.stream()
-                .filter(v -> v.getTipoVenda() == Venda.TipoVenda.C)
-                .map(v -> v.getTotalComissao() != null ? v.getTotalComissao() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        BigDecimal valorTotalFretes = vendas.stream()
-                .filter(v -> v.getTipoVenda() == Venda.TipoVenda.F)
-                .map(v -> v.getTotalFreteEletrons() != null ? v.getTotalFreteEletrons() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
         return new ResumoVendasDTO(
                 totalVendaPostes,
                 totalFreteEletrons,
-                totalComissao,
+                BigDecimal.ZERO, // totalComissao - removido
                 valorTotalVendas,
                 BigDecimal.ZERO, // despesasFuncionario - será calculado no frontend
                 BigDecimal.ZERO, // outrasDespesas - será calculado no frontend
@@ -203,11 +171,7 @@ public class VendaService {
                 totalVendasV,
                 totalVendasL,
                 valorTotalExtras,
-                valorTotalLivres,
-                totalVendasC,
-                totalVendasF,
-                valorTotalComissoes,
-                valorTotalFretes
+                totalFreteEletrons // valorTotalLivres agora é o frete do tipo L
         );
     }
 

@@ -48,9 +48,7 @@ public class Venda {
     public enum TipoVenda {
         E("Extra"),
         V("Venda Normal"),
-        L("Venda Livre"),
-        C("Comissão"),
-        F("Frete");
+        L("Venda Loja");
 
         private final String descricao;
 

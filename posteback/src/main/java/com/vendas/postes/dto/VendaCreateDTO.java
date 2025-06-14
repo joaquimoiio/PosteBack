@@ -18,16 +18,15 @@ public class VendaCreateDTO {
     // Campos para tipo V e L
     private Integer quantidade;
     private Long posteId;
+
+    // Campo para frete (apenas tipo L)
     private BigDecimal freteEletrons;
 
-    // Campo para tipo E, L e V
+    // Campo para valor de venda (apenas tipo V)
     private BigDecimal valorVenda;
 
     // Campo específico para tipo E
     private BigDecimal valorExtra;
-
-    // Campo específico para tipo C
-    private BigDecimal valorComissao;
 
     private String observacoes;
 }
