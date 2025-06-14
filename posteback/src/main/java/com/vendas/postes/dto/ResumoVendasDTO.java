@@ -22,5 +22,12 @@ public class ResumoVendasDTO {
     private BigDecimal parteGuilhermeJefferson;
     private BigDecimal parteGuilherme;
     private BigDecimal parteJefferson;
-    private BigDecimal totalValorExtra; // Campo mantido para compatibilidade
+    private BigDecimal totalContribuicoesExtras; // Contribuições dos tipos E e L
+
+    // Estatísticas por tipo de venda
+    private Long totalVendasE;
+    private Long totalVendasV;
+    private Long totalVendasL;
+    private BigDecimal valorTotalExtras; // Soma dos valores dos tipos E
+    private BigDecimal valorTotalLivres; // Soma dos valores dos tipos L
 }

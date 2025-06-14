@@ -39,29 +39,70 @@ public class VendaService {
 
     @Transactional
     public VendaDTO criarVenda(VendaCreateDTO vendaCreateDTO) {
-        // Buscar o poste
-        Poste poste = posteRepository.findById(vendaCreateDTO.getPosteId())
-                .orElseThrow(() -> new RuntimeException("Poste não encontrado"));
-
-        // Criar a venda
+        // Criar a venda base
         Venda venda = new Venda();
         venda.setDataVenda(vendaCreateDTO.getDataVenda());
-        venda.setTotalFreteEletrons(vendaCreateDTO.getFreteEletrons());
-        venda.setValorTotalInformado(vendaCreateDTO.getValorVenda());
+        venda.setTipoVenda(vendaCreateDTO.getTipoVenda());
         venda.setObservacoes(vendaCreateDTO.getObservacoes());
 
-        // Salvar a venda primeiro
+        // Configurar campos baseados no tipo de venda
+        switch (vendaCreateDTO.getTipoVenda()) {
+            case E:
+                // Tipo E: apenas valor extra
+                venda.setValorExtra(vendaCreateDTO.getValorExtra());
+                break;
+
+            case V:
+                // Tipo V: poste, quantidade, frete, valor de venda
+                venda.setTotalFreteEletrons(vendaCreateDTO.getFreteEletrons());
+                venda.setValorTotalInformado(vendaCreateDTO.getValorVenda());
+
+                // Criar item da venda
+                if (vendaCreateDTO.getPosteId() != null && vendaCreateDTO.getQuantidade() != null) {
+                    Poste poste = posteRepository.findById(vendaCreateDTO.getPosteId())
+                            .orElseThrow(() -> new RuntimeException("Poste não encontrado"));
+
+                    // Salvar a venda primeiro
+                    venda = vendaRepository.save(venda);
+
+                    ItemVenda itemVenda = new ItemVenda();
+                    itemVenda.setVenda(venda);
+                    itemVenda.setPoste(poste);
+                    itemVenda.setQuantidade(vendaCreateDTO.getQuantidade());
+                    itemVenda.setPrecoUnitario(poste.getPreco());
+
+                    itemVendaRepository.save(itemVenda);
+                    return convertToDTO(venda);
+                }
+                break;
+
+            case L:
+                // Tipo L: poste (sem considerar valor), quantidade, frete, valor de venda
+                venda.setTotalFreteEletrons(vendaCreateDTO.getFreteEletrons());
+                venda.setValorTotalInformado(vendaCreateDTO.getValorVenda());
+
+                // Criar item da venda (mas não considera o preço do poste para cálculos)
+                if (vendaCreateDTO.getPosteId() != null && vendaCreateDTO.getQuantidade() != null) {
+                    Poste poste = posteRepository.findById(vendaCreateDTO.getPosteId())
+                            .orElseThrow(() -> new RuntimeException("Poste não encontrado"));
+
+                    // Salvar a venda primeiro
+                    venda = vendaRepository.save(venda);
+
+                    ItemVenda itemVenda = new ItemVenda();
+                    itemVenda.setVenda(venda);
+                    itemVenda.setPoste(poste);
+                    itemVenda.setQuantidade(vendaCreateDTO.getQuantidade());
+                    itemVenda.setPrecoUnitario(BigDecimal.ZERO); // Não considera preço para tipo L
+
+                    itemVendaRepository.save(itemVenda);
+                    return convertToDTO(venda);
+                }
+                break;
+        }
+
+        // Salvar a venda (para tipos que não precisam de itens)
         venda = vendaRepository.save(venda);
-
-        // Criar o item da venda
-        ItemVenda itemVenda = new ItemVenda();
-        itemVenda.setVenda(venda);
-        itemVenda.setPoste(poste);
-        itemVenda.setQuantidade(vendaCreateDTO.getQuantidade());
-        itemVenda.setPrecoUnitario(poste.getPreco());
-
-        itemVendaRepository.save(itemVenda);
-
         return convertToDTO(venda);
     }
 
@@ -73,6 +114,7 @@ public class VendaService {
         venda.setTotalFreteEletrons(vendaDTO.getTotalFreteEletrons());
         venda.setTotalComissao(vendaDTO.getTotalComissao());
         venda.setValorTotalInformado(vendaDTO.getValorTotalInformado());
+        venda.setValorExtra(vendaDTO.getValorExtra());
         venda.setObservacoes(vendaDTO.getObservacoes());
 
         venda = vendaRepository.save(venda);
@@ -88,12 +130,14 @@ public class VendaService {
     }
 
     public ResumoVendasDTO calcularResumoVendas() {
-        // Calcular total de vendas dos postes
-        BigDecimal totalVendaPostes = itemVendaRepository.calcularTotalVendaPostes();
-        if (totalVendaPostes == null) totalVendaPostes = BigDecimal.ZERO;
-
-        // Buscar todas as vendas para calcular outros totais
+        // Buscar todas as vendas
         List<Venda> vendas = vendaRepository.findAll();
+
+        // Calcular totais por tipo de venda
+        BigDecimal totalVendaPostes = vendas.stream()
+                .filter(v -> v.getTipoVenda() == Venda.TipoVenda.V)
+                .map(Venda::calcularTotalItens)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         BigDecimal totalFreteEletrons = vendas.stream()
                 .map(v -> v.getTotalFreteEletrons() != null ? v.getTotalFreteEletrons() : BigDecimal.ZERO)
@@ -104,8 +148,39 @@ public class VendaService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         BigDecimal valorTotalVendas = vendas.stream()
+                .filter(v -> v.getTipoVenda() == Venda.TipoVenda.V)
                 .map(v -> v.getValorTotalInformado() != null ? v.getValorTotalInformado() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // Calcular contribuições extras para o lucro (tipos E e L)
+        BigDecimal contribuicaoExtras = vendas.stream()
+                .filter(v -> v.getTipoVenda() == Venda.TipoVenda.E || v.getTipoVenda() == Venda.TipoVenda.L)
+                .map(Venda::calcularContribuicaoLucro)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // Calcular valores específicos por tipo
+        BigDecimal valorTotalExtras = vendas.stream()
+                .filter(v -> v.getTipoVenda() == Venda.TipoVenda.E)
+                .map(v -> v.getValorExtra() != null ? v.getValorExtra() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal valorTotalLivres = vendas.stream()
+                .filter(v -> v.getTipoVenda() == Venda.TipoVenda.L)
+                .map(v -> v.getValorTotalInformado() != null ? v.getValorTotalInformado() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // Contar vendas por tipo
+        Long totalVendasE = vendas.stream()
+                .filter(v -> v.getTipoVenda() == Venda.TipoVenda.E)
+                .count();
+
+        Long totalVendasV = vendas.stream()
+                .filter(v -> v.getTipoVenda() == Venda.TipoVenda.V)
+                .count();
+
+        Long totalVendasL = vendas.stream()
+                .filter(v -> v.getTipoVenda() == Venda.TipoVenda.L)
+                .count();
 
         // Calcular despesas
         BigDecimal despesasFuncionario = despesaRepository.calcularTotalPorTipo(Despesa.TipoDespesa.FUNCIONARIO);
@@ -116,8 +191,9 @@ public class VendaService {
 
         BigDecimal totalDespesas = despesasFuncionario.add(outrasDespesas);
 
-        // Calcular lucro: Total dos postes - Valor total das vendas - Despesas
-        BigDecimal lucro = totalVendaPostes.subtract(valorTotalVendas).subtract(totalDespesas);
+        // Calcular lucro: (Total dos postes - Valor total das vendas V) + Contribuições E e L - Despesas
+        BigDecimal lucroVendasNormais = totalVendaPostes.subtract(valorTotalVendas);
+        BigDecimal lucro = lucroVendasNormais.add(contribuicaoExtras).subtract(totalDespesas);
 
         // Distribuição de lucro
         BigDecimal parteCicero = lucro.divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP);
@@ -139,7 +215,12 @@ public class VendaService {
                 parteGuilhermeJefferson,
                 parteGuilherme,
                 parteJefferson,
-                BigDecimal.ZERO // totalValorExtra mantido para compatibilidade
+                contribuicaoExtras, // totalContribuicoesExtras
+                totalVendasE,
+                totalVendasV,
+                totalVendasL,
+                valorTotalExtras,
+                valorTotalLivres
         );
     }
 
@@ -150,10 +231,12 @@ public class VendaService {
 
         return new VendaDTO(
                 venda.getId(),
+                venda.getDataVenda(),
+                venda.getTipoVenda(),
                 venda.getTotalFreteEletrons(),
                 venda.getTotalComissao(),
                 venda.getValorTotalInformado(),
-                venda.getDataVenda(),
+                venda.getValorExtra(),
                 venda.getObservacoes(),
                 itensDTO
         );
