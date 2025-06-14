@@ -1,11 +1,9 @@
 package com.vendas.postes.service;
 
 import com.vendas.postes.dto.*;
-import com.vendas.postes.model.Despesa;
 import com.vendas.postes.model.ItemVenda;
 import com.vendas.postes.model.Poste;
 import com.vendas.postes.model.Venda;
-import com.vendas.postes.repository.DespesaRepository;
 import com.vendas.postes.repository.ItemVendaRepository;
 import com.vendas.postes.repository.PosteRepository;
 import com.vendas.postes.repository.VendaRepository;
@@ -14,7 +12,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -24,7 +21,6 @@ import java.util.stream.Collectors;
 public class VendaService {
 
     private final VendaRepository vendaRepository;
-    private final DespesaRepository despesaRepository;
     private final ItemVendaRepository itemVendaRepository;
     private final PosteRepository posteRepository;
 
@@ -99,6 +95,16 @@ public class VendaService {
                     return convertToDTO(venda);
                 }
                 break;
+
+            case C:
+                // Tipo C: Comissão
+                venda.setTotalComissao(vendaCreateDTO.getValorComissao());
+                break;
+
+            case F:
+                // Tipo F: Frete
+                venda.setTotalFreteEletrons(vendaCreateDTO.getFreteEletrons());
+                break;
         }
 
         // Salvar a venda (para tipos que não precisam de itens)
@@ -129,11 +135,18 @@ public class VendaService {
         vendaRepository.delete(venda);
     }
 
-    public ResumoVendasDTO calcularResumoVendas() {
-        // Buscar todas as vendas
+    // Retorna apenas os dados brutos para o frontend calcular
+    public ResumoVendasDTO obterDadosParaCalculos() {
         List<Venda> vendas = vendaRepository.findAll();
 
-        // Calcular totais por tipo de venda
+        // Contar vendas por tipo
+        Long totalVendasE = vendas.stream().filter(v -> v.getTipoVenda() == Venda.TipoVenda.E).count();
+        Long totalVendasV = vendas.stream().filter(v -> v.getTipoVenda() == Venda.TipoVenda.V).count();
+        Long totalVendasL = vendas.stream().filter(v -> v.getTipoVenda() == Venda.TipoVenda.L).count();
+        Long totalVendasC = vendas.stream().filter(v -> v.getTipoVenda() == Venda.TipoVenda.C).count();
+        Long totalVendasF = vendas.stream().filter(v -> v.getTipoVenda() == Venda.TipoVenda.F).count();
+
+        // Calcular totais básicos (sem lógica de lucro)
         BigDecimal totalVendaPostes = vendas.stream()
                 .filter(v -> v.getTipoVenda() == Venda.TipoVenda.V)
                 .map(Venda::calcularTotalItens)
@@ -152,13 +165,6 @@ public class VendaService {
                 .map(v -> v.getValorTotalInformado() != null ? v.getValorTotalInformado() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // Calcular contribuições extras para o lucro (tipos E e L)
-        BigDecimal contribuicaoExtras = vendas.stream()
-                .filter(v -> v.getTipoVenda() == Venda.TipoVenda.E || v.getTipoVenda() == Venda.TipoVenda.L)
-                .map(Venda::calcularContribuicaoLucro)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        // Calcular valores específicos por tipo
         BigDecimal valorTotalExtras = vendas.stream()
                 .filter(v -> v.getTipoVenda() == Venda.TipoVenda.E)
                 .map(v -> v.getValorExtra() != null ? v.getValorExtra() : BigDecimal.ZERO)
@@ -169,58 +175,39 @@ public class VendaService {
                 .map(v -> v.getValorTotalInformado() != null ? v.getValorTotalInformado() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // Contar vendas por tipo
-        Long totalVendasE = vendas.stream()
-                .filter(v -> v.getTipoVenda() == Venda.TipoVenda.E)
-                .count();
+        BigDecimal valorTotalComissoes = vendas.stream()
+                .filter(v -> v.getTipoVenda() == Venda.TipoVenda.C)
+                .map(v -> v.getTotalComissao() != null ? v.getTotalComissao() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        Long totalVendasV = vendas.stream()
-                .filter(v -> v.getTipoVenda() == Venda.TipoVenda.V)
-                .count();
-
-        Long totalVendasL = vendas.stream()
-                .filter(v -> v.getTipoVenda() == Venda.TipoVenda.L)
-                .count();
-
-        // Calcular despesas
-        BigDecimal despesasFuncionario = despesaRepository.calcularTotalPorTipo(Despesa.TipoDespesa.FUNCIONARIO);
-        if (despesasFuncionario == null) despesasFuncionario = BigDecimal.ZERO;
-
-        BigDecimal outrasDespesas = despesaRepository.calcularTotalPorTipo(Despesa.TipoDespesa.OUTRAS);
-        if (outrasDespesas == null) outrasDespesas = BigDecimal.ZERO;
-
-        BigDecimal totalDespesas = despesasFuncionario.add(outrasDespesas);
-
-        // Calcular lucro: (Total dos postes - Valor total das vendas V) + Contribuições E e L - Despesas
-        BigDecimal lucroVendasNormais = totalVendaPostes.subtract(valorTotalVendas);
-        BigDecimal lucro = lucroVendasNormais.add(contribuicaoExtras).subtract(totalDespesas);
-
-        // Distribuição de lucro
-        BigDecimal parteCicero = lucro.divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP);
-        BigDecimal parteGuilhermeJefferson = lucro.divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP)
-                .subtract(despesasFuncionario);
-        BigDecimal parteGuilherme = parteGuilhermeJefferson.divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP);
-        BigDecimal parteJefferson = parteGuilhermeJefferson.divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP);
+        BigDecimal valorTotalFretes = vendas.stream()
+                .filter(v -> v.getTipoVenda() == Venda.TipoVenda.F)
+                .map(v -> v.getTotalFreteEletrons() != null ? v.getTotalFreteEletrons() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         return new ResumoVendasDTO(
                 totalVendaPostes,
                 totalFreteEletrons,
                 totalComissao,
                 valorTotalVendas,
-                despesasFuncionario,
-                outrasDespesas,
-                totalDespesas,
-                lucro,
-                parteCicero,
-                parteGuilhermeJefferson,
-                parteGuilherme,
-                parteJefferson,
-                contribuicaoExtras, // totalContribuicoesExtras
+                BigDecimal.ZERO, // despesasFuncionario - será calculado no frontend
+                BigDecimal.ZERO, // outrasDespesas - será calculado no frontend
+                BigDecimal.ZERO, // totalDespesas - será calculado no frontend
+                BigDecimal.ZERO, // lucro - será calculado no frontend
+                BigDecimal.ZERO, // parteCicero - será calculado no frontend
+                BigDecimal.ZERO, // parteGuilhermeJefferson - será calculado no frontend
+                BigDecimal.ZERO, // parteGuilherme - será calculado no frontend
+                BigDecimal.ZERO, // parteJefferson - será calculado no frontend
+                BigDecimal.ZERO, // totalContribuicoesExtras - será calculado no frontend
                 totalVendasE,
                 totalVendasV,
                 totalVendasL,
                 valorTotalExtras,
-                valorTotalLivres
+                valorTotalLivres,
+                totalVendasC,
+                totalVendasF,
+                valorTotalComissoes,
+                valorTotalFretes
         );
     }
 

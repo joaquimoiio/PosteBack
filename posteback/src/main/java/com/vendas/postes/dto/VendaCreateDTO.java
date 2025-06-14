@@ -20,11 +20,14 @@ public class VendaCreateDTO {
     private Long posteId;
     private BigDecimal freteEletrons;
 
-    // Campo para tipo E e L
+    // Campo para tipo E, L e V
     private BigDecimal valorVenda;
 
     // Campo específico para tipo E
     private BigDecimal valorExtra;
+
+    // Campo específico para tipo C
+    private BigDecimal valorComissao;
 
     private String observacoes;
 }

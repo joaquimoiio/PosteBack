@@ -3,7 +3,6 @@ package com.vendas.postes.controller;
 import com.vendas.postes.dto.ResumoVendasDTO;
 import com.vendas.postes.dto.VendaCreateDTO;
 import com.vendas.postes.dto.VendaDTO;
-import com.vendas.postes.model.Venda;
 import com.vendas.postes.repository.VendaRepository;
 import com.vendas.postes.service.VendaService;
 import lombok.RequiredArgsConstructor;
@@ -35,7 +34,7 @@ public class VendaController {
 
     @GetMapping("/resumo")
     public ResumoVendasDTO obterResumo() {
-        return vendaService.calcularResumoVendas();
+        return vendaService.obterDadosParaCalculos();
     }
 
     @PostMapping

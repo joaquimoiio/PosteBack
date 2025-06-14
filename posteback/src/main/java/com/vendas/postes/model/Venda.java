@@ -48,7 +48,9 @@ public class Venda {
     public enum TipoVenda {
         E("Extra"),
         V("Venda Normal"),
-        L("Venda Livre");
+        L("Venda Livre"),
+        C("Comissão"),
+        F("Frete");
 
         private final String descricao;
 
@@ -61,55 +63,14 @@ public class Venda {
         }
     }
 
-    // Métodos para calcular totais baseados no tipo de venda
+    // Método para calcular total dos itens (apenas para tipo V)
     public BigDecimal calcularTotalItens() {
-        if (tipoVenda == TipoVenda.E) {
-            return BigDecimal.ZERO; // Para tipo E, não considera postes
+        if (tipoVenda == TipoVenda.V && itens != null) {
+            return itens.stream()
+                    .map(ItemVenda::getSubtotal)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
         }
-
-        return itens != null ?
-                itens.stream()
-                        .map(ItemVenda::getSubtotal)
-                        .reduce(BigDecimal.ZERO, BigDecimal::add)
-                : BigDecimal.ZERO;
-    }
-
-    public BigDecimal calcularValorTotal() {
-        switch (tipoVenda) {
-            case E:
-                // Para tipo E: apenas valor extra
-                return valorExtra != null ? valorExtra : BigDecimal.ZERO;
-            case V:
-                // Para tipo V: valor dos postes + frete + comissão
-                return calcularTotalItens()
-                        .add(totalFreteEletrons != null ? totalFreteEletrons : BigDecimal.ZERO)
-                        .add(totalComissao != null ? totalComissao : BigDecimal.ZERO);
-            case L:
-                // Para tipo L: valor informado + frete
-                return (valorTotalInformado != null ? valorTotalInformado : BigDecimal.ZERO)
-                        .add(totalFreteEletrons != null ? totalFreteEletrons : BigDecimal.ZERO);
-            default:
-                return BigDecimal.ZERO;
-        }
-    }
-
-    // Método para calcular contribuição para o lucro
-    public BigDecimal calcularContribuicaoLucro() {
-        switch (tipoVenda) {
-            case E:
-                // Para tipo E: valor extra contribui diretamente para o lucro
-                return valorExtra != null ? valorExtra : BigDecimal.ZERO;
-            case V:
-                // Para tipo V: valor dos postes - valor de venda (se houver diferença positiva)
-                BigDecimal valorPostes = calcularTotalItens();
-                BigDecimal valorVenda = valorTotalInformado != null ? valorTotalInformado : BigDecimal.ZERO;
-                return valorPostes.subtract(valorVenda);
-            case L:
-                // Para tipo L: valor de venda contribui diretamente para o lucro
-                return valorTotalInformado != null ? valorTotalInformado : BigDecimal.ZERO;
-            default:
-                return BigDecimal.ZERO;
-        }
+        return BigDecimal.ZERO;
     }
 
     public Long getId() {
