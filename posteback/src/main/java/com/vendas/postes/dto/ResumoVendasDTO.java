@@ -19,8 +19,8 @@ public class ResumoVendasDTO {
     private BigDecimal totalDespesas;         // Calculado no frontend
     private BigDecimal lucro;                 // Calculado no frontend
     private BigDecimal parteCicero;           // Calculado no frontend
-    private BigDecimal parteGuilhermeJefferson; // Calculado no frontend
-    private BigDecimal parteGuilherme;        // Calculado no frontend
+    private BigDecimal parteGilbertoJefferson; // Calculado no frontend
+    private BigDecimal parteGilberto;        // Calculado no frontend
     private BigDecimal parteJefferson;        // Calculado no frontend
     private BigDecimal totalContribuicoesExtras; // Calculado no frontend
 

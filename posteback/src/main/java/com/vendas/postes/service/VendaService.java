@@ -163,8 +163,8 @@ public class VendaService {
                 BigDecimal.ZERO, // totalDespesas - será calculado no frontend
                 BigDecimal.ZERO, // lucro - será calculado no frontend
                 BigDecimal.ZERO, // parteCicero - será calculado no frontend
-                BigDecimal.ZERO, // parteGuilhermeJefferson - será calculado no frontend
-                BigDecimal.ZERO, // parteGuilherme - será calculado no frontend
+                BigDecimal.ZERO, // parteGilbertoJefferson - será calculado no frontend
+                BigDecimal.ZERO, // parteGilberto - será calculado no frontend
                 BigDecimal.ZERO, // parteJefferson - será calculado no frontend
                 BigDecimal.ZERO, // totalContribuicoesExtras - será calculado no frontend
                 totalVendasE,
