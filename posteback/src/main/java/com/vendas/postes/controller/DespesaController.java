@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.List;
 
 @RestController
@@ -102,17 +103,36 @@ public class DespesaController {
     }
 
     @PostMapping
-    public Despesa criar(@RequestBody Despesa despesa) {
+    public Despesa criar(@RequestBody DespesaRequest request) {
+        Despesa despesa = new Despesa();
+        despesa.setDescricao(request.getDescricao());
+        despesa.setValor(request.getValor());
+        despesa.setTipo(request.getTipo());
+
+        // Se dataDespesa foi informada, usar ela. Senão, usar data/hora atual
+        if (request.getDataDespesa() != null) {
+            // Converter data (YYYY-MM-DD) para LocalDateTime no início do dia
+            despesa.setDataDespesa(request.getDataDespesa().atStartOfDay());
+        } else {
+            despesa.setDataDespesa(LocalDateTime.now());
+        }
+
         return despesaRepository.save(despesa);
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Despesa> atualizar(@PathVariable Long id, @RequestBody Despesa despesaAtualizada) {
+    public ResponseEntity<Despesa> atualizar(@PathVariable Long id, @RequestBody DespesaRequest request) {
         return despesaRepository.findById(id)
                 .map(despesa -> {
-                    despesa.setDescricao(despesaAtualizada.getDescricao());
-                    despesa.setValor(despesaAtualizada.getValor());
-                    despesa.setTipo(despesaAtualizada.getTipo());
+                    despesa.setDescricao(request.getDescricao());
+                    despesa.setValor(request.getValor());
+                    despesa.setTipo(request.getTipo());
+
+                    // Se dataDespesa foi informada, atualizar. Senão, manter a existente
+                    if (request.getDataDespesa() != null) {
+                        despesa.setDataDespesa(request.getDataDespesa().atStartOfDay());
+                    }
+
                     return ResponseEntity.ok(despesaRepository.save(despesa));
                 })
                 .orElse(ResponseEntity.notFound().build());
@@ -126,5 +146,26 @@ public class DespesaController {
                     return ResponseEntity.ok().build();
                 })
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    // Classe interna para request de despesa
+    public static class DespesaRequest {
+        private String descricao;
+        private java.math.BigDecimal valor;
+        private Despesa.TipoDespesa tipo;
+        private LocalDate dataDespesa;
+
+        // Getters e Setters
+        public String getDescricao() { return descricao; }
+        public void setDescricao(String descricao) { this.descricao = descricao; }
+
+        public java.math.BigDecimal getValor() { return valor; }
+        public void setValor(java.math.BigDecimal valor) { this.valor = valor; }
+
+        public Despesa.TipoDespesa getTipo() { return tipo; }
+        public void setTipo(Despesa.TipoDespesa tipo) { this.tipo = tipo; }
+
+        public LocalDate getDataDespesa() { return dataDespesa; }
+        public void setDataDespesa(LocalDate dataDespesa) { this.dataDespesa = dataDespesa; }
     }
 }
