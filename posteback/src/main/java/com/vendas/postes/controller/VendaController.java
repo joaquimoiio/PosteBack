@@ -6,9 +6,11 @@ import com.vendas.postes.dto.VendaDTO;
 import com.vendas.postes.repository.VendaRepository;
 import com.vendas.postes.service.VendaService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -22,7 +24,17 @@ public class VendaController {
     private final VendaService vendaService;
 
     @GetMapping
-    public List<VendaDTO> listarTodas() {
+    public List<VendaDTO> listarTodas(
+            @RequestParam(value = "dataInicio", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dataInicio,
+
+            @RequestParam(value = "dataFim", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dataFim) {
+
+        if (dataInicio != null || dataFim != null) {
+            return vendaService.listarVendasPorPeriodo(dataInicio, dataFim);
+        }
+
         return vendaService.listarTodasVendas();
     }
 
@@ -33,8 +45,29 @@ public class VendaController {
     }
 
     @GetMapping("/resumo")
-    public ResumoVendasDTO obterResumo() {
+    public ResumoVendasDTO obterResumo(
+            @RequestParam(value = "dataInicio", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dataInicio,
+
+            @RequestParam(value = "dataFim", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dataFim) {
+
+        if (dataInicio != null || dataFim != null) {
+            return vendaService.obterDadosParaCalculosPorPeriodo(dataInicio, dataFim);
+        }
+
         return vendaService.obterDadosParaCalculos();
+    }
+
+    @GetMapping("/periodo")
+    public List<VendaDTO> listarPorPeriodo(
+            @RequestParam(value = "dataInicio", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dataInicio,
+
+            @RequestParam(value = "dataFim", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dataFim) {
+
+        return vendaService.listarVendasPorPeriodo(dataInicio, dataFim);
     }
 
     @PostMapping

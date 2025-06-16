@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -26,6 +27,27 @@ public class VendaService {
 
     public List<VendaDTO> listarTodasVendas() {
         List<Venda> vendas = vendaRepository.findAllOrderByDataVendaDesc();
+        return vendas.stream().map(this::convertToDTO).collect(Collectors.toList());
+    }
+
+    public List<VendaDTO> listarVendasPorPeriodo(LocalDateTime dataInicio, LocalDateTime dataFim) {
+        List<Venda> vendas;
+
+        if (dataInicio != null || dataFim != null) {
+            // Ajustar para período completo se apenas uma data for fornecida
+            LocalDateTime inicio = dataInicio != null ? dataInicio : LocalDateTime.of(1900, 1, 1, 0, 0);
+            LocalDateTime fim = dataFim != null ? dataFim : LocalDateTime.now().plusDays(1);
+
+            vendas = vendaRepository.findByDataVendaBetween(inicio, fim);
+
+            // Ordenar por data decrescente
+            vendas = vendas.stream()
+                    .sorted((v1, v2) -> v2.getDataVenda().compareTo(v1.getDataVenda()))
+                    .collect(Collectors.toList());
+        } else {
+            vendas = vendaRepository.findAllOrderByDataVendaDesc();
+        }
+
         return vendas.stream().map(this::convertToDTO).collect(Collectors.toList());
     }
 
@@ -123,10 +145,28 @@ public class VendaService {
         vendaRepository.delete(venda);
     }
 
-    // Retorna apenas os dados brutos para o frontend calcular
+    // Retorna apenas os dados brutos para o frontend calcular (todos os dados)
     public ResumoVendasDTO obterDadosParaCalculos() {
         List<Venda> vendas = vendaRepository.findAll();
+        return calcularResumoVendas(vendas);
+    }
 
+    // Retorna dados brutos filtrados por período
+    public ResumoVendasDTO obterDadosParaCalculosPorPeriodo(LocalDateTime dataInicio, LocalDateTime dataFim) {
+        List<Venda> vendas;
+
+        if (dataInicio != null || dataFim != null) {
+            LocalDateTime inicio = dataInicio != null ? dataInicio : LocalDateTime.of(1900, 1, 1, 0, 0);
+            LocalDateTime fim = dataFim != null ? dataFim : LocalDateTime.now().plusDays(1);
+            vendas = vendaRepository.findByDataVendaBetween(inicio, fim);
+        } else {
+            vendas = vendaRepository.findAll();
+        }
+
+        return calcularResumoVendas(vendas);
+    }
+
+    private ResumoVendasDTO calcularResumoVendas(List<Venda> vendas) {
         // Contar vendas por tipo
         Long totalVendasE = vendas.stream().filter(v -> v.getTipoVenda() == Venda.TipoVenda.E).count();
         Long totalVendasV = vendas.stream().filter(v -> v.getTipoVenda() == Venda.TipoVenda.V).count();
