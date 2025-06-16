@@ -10,24 +10,19 @@ import java.math.BigDecimal;
 @AllArgsConstructor
 @NoArgsConstructor
 public class ResumoVendasDTO {
-    private BigDecimal totalVendaPostes;      // Custo dos postes vendidos (tipo V)
-    private BigDecimal totalFreteEletrons;    // Frete do tipo L
-    private BigDecimal totalComissao;         // Removido - não usado mais
-    private BigDecimal valorTotalVendas;      // Valor arrecadado tipo V
-    private BigDecimal despesasFuncionario;   // Calculado no frontend
-    private BigDecimal outrasDespesas;        // Calculado no frontend
-    private BigDecimal totalDespesas;         // Calculado no frontend
-    private BigDecimal lucro;                 // Calculado no frontend
-    private BigDecimal parteCicero;           // Calculado no frontend
-    private BigDecimal parteGilbertoJefferson; // Calculado no frontend
-    private BigDecimal parteGilberto;        // Calculado no frontend
-    private BigDecimal parteJefferson;        // Calculado no frontend
-    private BigDecimal totalContribuicoesExtras; // Calculado no frontend
+    // Valores básicos
+    private BigDecimal totalVendaPostes;
+    private BigDecimal valorTotalVendas;
+    private BigDecimal totalFreteEletrons;
+    private BigDecimal valorTotalExtras;
 
-    // Estatísticas por tipo de venda (apenas E, V, L agora)
+    // Estatísticas por tipo
     private Long totalVendasE;
     private Long totalVendasV;
     private Long totalVendasL;
-    private BigDecimal valorTotalExtras;      // Soma dos valores tipo E
-    private BigDecimal valorTotalLivres;      // Frete do tipo L (mesmo que totalFreteEletrons)
+
+    // Para cálculos no frontend
+    private BigDecimal despesasFuncionario;
+    private BigDecimal outrasDespesas;
+    private BigDecimal totalContribuicoesExtras;
 }

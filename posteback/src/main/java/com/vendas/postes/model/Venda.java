@@ -7,7 +7,6 @@ import lombok.AllArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.List;
 
 @Entity
 @Table(name = "vendas")
@@ -27,23 +26,29 @@ public class Venda {
     @Column(name = "tipo_venda", nullable = false)
     private TipoVenda tipoVenda;
 
-    @Column(name = "total_frete_eletrons", precision = 10, scale = 2)
-    private BigDecimal totalFreteEletrons = BigDecimal.ZERO;
+    // Para tipo V e L
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "poste_id")
+    private Poste poste;
 
-    @Column(name = "total_comissao", precision = 10, scale = 2)
-    private BigDecimal totalComissao = BigDecimal.ZERO;
+    // Para tipo V e L
+    @Column(name = "quantidade")
+    private Integer quantidade;
 
-    @Column(name = "valor_total_informado", precision = 10, scale = 2)
-    private BigDecimal valorTotalInformado = BigDecimal.ZERO;
+    // Para tipo L
+    @Column(name = "frete_eletrons", precision = 10, scale = 2)
+    private BigDecimal freteEletrons;
 
+    // Para tipo V
+    @Column(name = "valor_venda", precision = 10, scale = 2)
+    private BigDecimal valorVenda;
+
+    // Para tipo E
     @Column(name = "valor_extra", precision = 10, scale = 2)
-    private BigDecimal valorExtra = BigDecimal.ZERO;
+    private BigDecimal valorExtra;
 
     @Column(name = "observacoes", length = 1000)
     private String observacoes;
-
-    @OneToMany(mappedBy = "venda", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
-    private List<ItemVenda> itens;
 
     public enum TipoVenda {
         E("Extra"),
@@ -59,87 +64,5 @@ public class Venda {
         public String getDescricao() {
             return descricao;
         }
-    }
-
-    // Método para calcular total dos itens (apenas para tipo V)
-    public BigDecimal calcularTotalItens() {
-        if (tipoVenda == TipoVenda.V && itens != null) {
-            return itens.stream()
-                    .map(ItemVenda::getSubtotal)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-        }
-        return BigDecimal.ZERO;
-    }
-
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public LocalDateTime getDataVenda() {
-        return dataVenda;
-    }
-
-    public void setDataVenda(LocalDateTime dataVenda) {
-        this.dataVenda = dataVenda;
-    }
-
-    public TipoVenda getTipoVenda() {
-        return tipoVenda;
-    }
-
-    public void setTipoVenda(TipoVenda tipoVenda) {
-        this.tipoVenda = tipoVenda;
-    }
-
-    public BigDecimal getTotalFreteEletrons() {
-        return totalFreteEletrons;
-    }
-
-    public void setTotalFreteEletrons(BigDecimal totalFreteEletrons) {
-        this.totalFreteEletrons = totalFreteEletrons;
-    }
-
-    public BigDecimal getTotalComissao() {
-        return totalComissao;
-    }
-
-    public void setTotalComissao(BigDecimal totalComissao) {
-        this.totalComissao = totalComissao;
-    }
-
-    public BigDecimal getValorTotalInformado() {
-        return valorTotalInformado;
-    }
-
-    public void setValorTotalInformado(BigDecimal valorTotalInformado) {
-        this.valorTotalInformado = valorTotalInformado;
-    }
-
-    public BigDecimal getValorExtra() {
-        return valorExtra;
-    }
-
-    public void setValorExtra(BigDecimal valorExtra) {
-        this.valorExtra = valorExtra;
-    }
-
-    public String getObservacoes() {
-        return observacoes;
-    }
-
-    public void setObservacoes(String observacoes) {
-        this.observacoes = observacoes;
-    }
-
-    public List<ItemVenda> getItens() {
-        return itens;
-    }
-
-    public void setItens(List<ItemVenda> itens) {
-        this.itens = itens;
     }
 }

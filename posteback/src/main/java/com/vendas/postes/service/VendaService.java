@@ -1,10 +1,8 @@
 package com.vendas.postes.service;
 
 import com.vendas.postes.dto.*;
-import com.vendas.postes.model.ItemVenda;
 import com.vendas.postes.model.Poste;
 import com.vendas.postes.model.Venda;
-import com.vendas.postes.repository.ItemVendaRepository;
 import com.vendas.postes.repository.PosteRepository;
 import com.vendas.postes.repository.VendaRepository;
 import lombok.RequiredArgsConstructor;
@@ -12,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -22,102 +21,60 @@ import java.util.stream.Collectors;
 public class VendaService {
 
     private final VendaRepository vendaRepository;
-    private final ItemVendaRepository itemVendaRepository;
     private final PosteRepository posteRepository;
 
     public List<VendaDTO> listarTodasVendas() {
-        List<Venda> vendas = vendaRepository.findAllOrderByDataVendaDesc();
+        List<Venda> vendas = vendaRepository.findAllByOrderByDataVendaDesc();
         return vendas.stream().map(this::convertToDTO).collect(Collectors.toList());
     }
 
-    public List<VendaDTO> listarVendasPorPeriodo(LocalDateTime dataInicio, LocalDateTime dataFim) {
-        List<Venda> vendas;
+    public List<VendaDTO> listarVendasPorPeriodo(LocalDate dataInicio, LocalDate dataFim) {
+        LocalDateTime inicio = dataInicio != null ? dataInicio.atStartOfDay() : LocalDateTime.of(1900, 1, 1, 0, 0);
+        LocalDateTime fim = dataFim != null ? dataFim.atTime(23, 59, 59) : LocalDateTime.now();
 
-        if (dataInicio != null || dataFim != null) {
-            // Ajustar para período completo se apenas uma data for fornecida
-            LocalDateTime inicio = dataInicio != null ? dataInicio : LocalDateTime.of(1900, 1, 1, 0, 0);
-            LocalDateTime fim = dataFim != null ? dataFim : LocalDateTime.now().plusDays(1);
-
-            vendas = vendaRepository.findByDataVendaBetween(inicio, fim);
-
-            // Ordenar por data decrescente
-            vendas = vendas.stream()
-                    .sorted((v1, v2) -> v2.getDataVenda().compareTo(v1.getDataVenda()))
-                    .collect(Collectors.toList());
-        } else {
-            vendas = vendaRepository.findAllOrderByDataVendaDesc();
-        }
-
-        return vendas.stream().map(this::convertToDTO).collect(Collectors.toList());
+        List<Venda> vendas = vendaRepository.findByDataVendaBetween(inicio, fim);
+        return vendas.stream()
+                .sorted((v1, v2) -> v2.getDataVenda().compareTo(v1.getDataVenda()))
+                .map(this::convertToDTO)
+                .collect(Collectors.toList());
     }
 
     public Optional<VendaDTO> buscarVendaPorId(Long id) {
         return vendaRepository.findById(id).map(this::convertToDTO);
     }
 
+    public ResumoVendasDTO obterResumoVendas() {
+        List<Venda> vendas = vendaRepository.findAll();
+        return calcularResumoVendas(vendas);
+    }
+
+    public ResumoVendasDTO obterResumoVendasPorPeriodo(LocalDate dataInicio, LocalDate dataFim) {
+        LocalDateTime inicio = dataInicio != null ? dataInicio.atStartOfDay() : LocalDateTime.of(1900, 1, 1, 0, 0);
+        LocalDateTime fim = dataFim != null ? dataFim.atTime(23, 59, 59) : LocalDateTime.now();
+
+        List<Venda> vendas = vendaRepository.findByDataVendaBetween(inicio, fim);
+        return calcularResumoVendas(vendas);
+    }
+
     @Transactional
     public VendaDTO criarVenda(VendaCreateDTO vendaCreateDTO) {
-        // Criar a venda base
         Venda venda = new Venda();
         venda.setDataVenda(vendaCreateDTO.getDataVenda());
         venda.setTipoVenda(vendaCreateDTO.getTipoVenda());
         venda.setObservacoes(vendaCreateDTO.getObservacoes());
 
-        // Configurar campos baseados no tipo de venda
-        switch (vendaCreateDTO.getTipoVenda()) {
-            case E:
-                // Tipo E: apenas valor extra
-                venda.setValorExtra(vendaCreateDTO.getValorExtra());
-                break;
-
-            case V:
-                // Tipo V: poste, quantidade, valor de venda (SEM frete)
-                venda.setValorTotalInformado(vendaCreateDTO.getValorVenda());
-
-                // Criar item da venda
-                if (vendaCreateDTO.getPosteId() != null && vendaCreateDTO.getQuantidade() != null) {
-                    Poste poste = posteRepository.findById(vendaCreateDTO.getPosteId())
-                            .orElseThrow(() -> new RuntimeException("Poste não encontrado"));
-
-                    // Salvar a venda primeiro
-                    venda = vendaRepository.save(venda);
-
-                    ItemVenda itemVenda = new ItemVenda();
-                    itemVenda.setVenda(venda);
-                    itemVenda.setPoste(poste);
-                    itemVenda.setQuantidade(vendaCreateDTO.getQuantidade());
-                    itemVenda.setPrecoUnitario(poste.getPreco());
-
-                    itemVendaRepository.save(itemVenda);
-                    return convertToDTO(venda);
-                }
-                break;
-
-            case L:
-                // Tipo L: poste (referência), quantidade, frete (SEM valor de venda, SEM preço do poste)
-                venda.setTotalFreteEletrons(vendaCreateDTO.getFreteEletrons());
-
-                // Criar item da venda (mas não considera o preço do poste para cálculos)
-                if (vendaCreateDTO.getPosteId() != null && vendaCreateDTO.getQuantidade() != null) {
-                    Poste poste = posteRepository.findById(vendaCreateDTO.getPosteId())
-                            .orElseThrow(() -> new RuntimeException("Poste não encontrado"));
-
-                    // Salvar a venda primeiro
-                    venda = vendaRepository.save(venda);
-
-                    ItemVenda itemVenda = new ItemVenda();
-                    itemVenda.setVenda(venda);
-                    itemVenda.setPoste(poste);
-                    itemVenda.setQuantidade(vendaCreateDTO.getQuantidade());
-                    itemVenda.setPrecoUnitario(BigDecimal.ZERO); // Não considera preço para tipo L
-
-                    itemVendaRepository.save(itemVenda);
-                    return convertToDTO(venda);
-                }
-                break;
+        // Configurar campos baseados no tipo
+        if (vendaCreateDTO.getPosteId() != null) {
+            Poste poste = posteRepository.findById(vendaCreateDTO.getPosteId())
+                    .orElseThrow(() -> new RuntimeException("Poste não encontrado"));
+            venda.setPoste(poste);
         }
 
-        // Salvar a venda (para tipos que não precisam de itens)
+        venda.setQuantidade(vendaCreateDTO.getQuantidade());
+        venda.setFreteEletrons(vendaCreateDTO.getFreteEletrons());
+        venda.setValorVenda(vendaCreateDTO.getValorVenda());
+        venda.setValorExtra(vendaCreateDTO.getValorExtra());
+
         venda = vendaRepository.save(venda);
         return convertToDTO(venda);
     }
@@ -127,9 +84,8 @@ public class VendaService {
         Venda venda = vendaRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Venda não encontrada"));
 
-        venda.setTotalFreteEletrons(vendaDTO.getTotalFreteEletrons());
-        venda.setTotalComissao(vendaDTO.getTotalComissao());
-        venda.setValorTotalInformado(vendaDTO.getValorTotalInformado());
+        venda.setFreteEletrons(vendaDTO.getFreteEletrons());
+        venda.setValorVenda(vendaDTO.getValorVenda());
         venda.setValorExtra(vendaDTO.getValorExtra());
         venda.setObservacoes(vendaDTO.getObservacoes());
 
@@ -141,108 +97,70 @@ public class VendaService {
     public void deletarVenda(Long id) {
         Venda venda = vendaRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Venda não encontrada"));
-
         vendaRepository.delete(venda);
     }
 
-    // Retorna apenas os dados brutos para o frontend calcular (todos os dados)
-    public ResumoVendasDTO obterDadosParaCalculos() {
-        List<Venda> vendas = vendaRepository.findAll();
-        return calcularResumoVendas(vendas);
-    }
-
-    // Retorna dados brutos filtrados por período
-    public ResumoVendasDTO obterDadosParaCalculosPorPeriodo(LocalDateTime dataInicio, LocalDateTime dataFim) {
-        List<Venda> vendas;
-
-        if (dataInicio != null || dataFim != null) {
-            LocalDateTime inicio = dataInicio != null ? dataInicio : LocalDateTime.of(1900, 1, 1, 0, 0);
-            LocalDateTime fim = dataFim != null ? dataFim : LocalDateTime.now().plusDays(1);
-            vendas = vendaRepository.findByDataVendaBetween(inicio, fim);
-        } else {
-            vendas = vendaRepository.findAll();
-        }
-
-        return calcularResumoVendas(vendas);
-    }
-
     private ResumoVendasDTO calcularResumoVendas(List<Venda> vendas) {
-        // Contar vendas por tipo
-        Long totalVendasE = vendas.stream().filter(v -> v.getTipoVenda() == Venda.TipoVenda.E).count();
-        Long totalVendasV = vendas.stream().filter(v -> v.getTipoVenda() == Venda.TipoVenda.V).count();
-        Long totalVendasL = vendas.stream().filter(v -> v.getTipoVenda() == Venda.TipoVenda.L).count();
+        // Separar por tipo
+        List<Venda> vendasE = vendas.stream().filter(v -> v.getTipoVenda() == Venda.TipoVenda.E).collect(Collectors.toList());
+        List<Venda> vendasV = vendas.stream().filter(v -> v.getTipoVenda() == Venda.TipoVenda.V).collect(Collectors.toList());
+        List<Venda> vendasL = vendas.stream().filter(v -> v.getTipoVenda() == Venda.TipoVenda.L).collect(Collectors.toList());
 
-        // Calcular totais básicos (sem lógica de lucro)
-        BigDecimal totalVendaPostes = vendas.stream()
-                .filter(v -> v.getTipoVenda() == Venda.TipoVenda.V)
-                .map(Venda::calcularTotalItens)
+        // Calcular totais
+        BigDecimal totalVendaPostes = vendasV.stream()
+                .map(v -> {
+                    if (v.getPoste() != null && v.getQuantidade() != null) {
+                        return v.getPoste().getPreco().multiply(BigDecimal.valueOf(v.getQuantidade()));
+                    }
+                    return BigDecimal.ZERO;
+                })
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        BigDecimal totalFreteEletrons = vendas.stream()
-                .filter(v -> v.getTipoVenda() == Venda.TipoVenda.L) // Apenas tipo L tem frete agora
-                .map(v -> v.getTotalFreteEletrons() != null ? v.getTotalFreteEletrons() : BigDecimal.ZERO)
+        BigDecimal valorTotalVendas = vendasV.stream()
+                .map(v -> v.getValorVenda() != null ? v.getValorVenda() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        BigDecimal valorTotalVendas = vendas.stream()
-                .filter(v -> v.getTipoVenda() == Venda.TipoVenda.V)
-                .map(v -> v.getValorTotalInformado() != null ? v.getValorTotalInformado() : BigDecimal.ZERO)
+        BigDecimal totalFreteEletrons = vendasL.stream()
+                .map(v -> v.getFreteEletrons() != null ? v.getFreteEletrons() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        BigDecimal valorTotalExtras = vendas.stream()
-                .filter(v -> v.getTipoVenda() == Venda.TipoVenda.E)
+        BigDecimal valorTotalExtras = vendasE.stream()
                 .map(v -> v.getValorExtra() != null ? v.getValorExtra() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+        BigDecimal totalContribuicoesExtras = valorTotalExtras.add(totalFreteEletrons);
+
         return new ResumoVendasDTO(
                 totalVendaPostes,
-                totalFreteEletrons,
-                BigDecimal.ZERO, // totalComissao - removido
                 valorTotalVendas,
-                BigDecimal.ZERO, // despesasFuncionario - será calculado no frontend
-                BigDecimal.ZERO, // outrasDespesas - será calculado no frontend
-                BigDecimal.ZERO, // totalDespesas - será calculado no frontend
-                BigDecimal.ZERO, // lucro - será calculado no frontend
-                BigDecimal.ZERO, // parteCicero - será calculado no frontend
-                BigDecimal.ZERO, // parteGilbertoJefferson - será calculado no frontend
-                BigDecimal.ZERO, // parteGilberto - será calculado no frontend
-                BigDecimal.ZERO, // parteJefferson - será calculado no frontend
-                BigDecimal.ZERO, // totalContribuicoesExtras - será calculado no frontend
-                totalVendasE,
-                totalVendasV,
-                totalVendasL,
+                totalFreteEletrons,
                 valorTotalExtras,
-                totalFreteEletrons // valorTotalLivres agora é o frete do tipo L
+                (long) vendasE.size(),
+                (long) vendasV.size(),
+                (long) vendasL.size(),
+                BigDecimal.ZERO, // despesasFuncionario - calculado no frontend
+                BigDecimal.ZERO, // outrasDespesas - calculado no frontend
+                totalContribuicoesExtras
         );
     }
 
     private VendaDTO convertToDTO(Venda venda) {
-        List<ItemVendaDTO> itensDTO = venda.getItens() != null ?
-                venda.getItens().stream().map(this::convertItemToDTO).collect(Collectors.toList()) :
-                List.of();
+        VendaDTO dto = new VendaDTO();
+        dto.setId(venda.getId());
+        dto.setDataVenda(venda.getDataVenda());
+        dto.setTipoVenda(venda.getTipoVenda());
+        dto.setQuantidade(venda.getQuantidade());
+        dto.setFreteEletrons(venda.getFreteEletrons());
+        dto.setValorVenda(venda.getValorVenda());
+        dto.setValorExtra(venda.getValorExtra());
+        dto.setObservacoes(venda.getObservacoes());
 
-        return new VendaDTO(
-                venda.getId(),
-                venda.getDataVenda(),
-                venda.getTipoVenda(),
-                venda.getTotalFreteEletrons(),
-                venda.getTotalComissao(),
-                venda.getValorTotalInformado(),
-                venda.getValorExtra(),
-                venda.getObservacoes(),
-                itensDTO
-        );
-    }
+        if (venda.getPoste() != null) {
+            dto.setPosteId(venda.getPoste().getId());
+            dto.setCodigoPoste(venda.getPoste().getCodigo());
+            dto.setDescricaoPoste(venda.getPoste().getDescricao());
+        }
 
-    private ItemVendaDTO convertItemToDTO(ItemVenda item) {
-        return new ItemVendaDTO(
-                item.getId(),
-                item.getVenda().getId(),
-                item.getPoste().getId(),
-                item.getPoste().getCodigo(),
-                item.getPoste().getDescricao(),
-                item.getQuantidade(),
-                item.getPrecoUnitario(),
-                item.getSubtotal()
-        );
+        return dto;
     }
 }

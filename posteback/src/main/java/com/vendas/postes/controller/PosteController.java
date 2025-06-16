@@ -22,11 +22,6 @@ public class PosteController {
         return posteRepository.findAll();
     }
 
-    @GetMapping("/ativos")
-    public List<Poste> listarAtivos() {
-        return posteRepository.findByAtivoTrue();
-    }
-
     @GetMapping("/{id}")
     public ResponseEntity<Poste> buscarPorId(@PathVariable Long id) {
         Optional<Poste> poste = posteRepository.findById(id);
