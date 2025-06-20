@@ -17,6 +17,19 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+/**
+ * Service refatorado para gerenciamento de vendas com integração completa ao estoque.
+ *
+ * Responsabilidades:
+ * - CRUD de vendas
+ * - Validação de dados
+ * - Integração com estoque
+ * - Cálculo de resumos
+ * - Auditoria de operações
+ *
+ * @author Sistema de Vendas de Postes
+ * @version 2.0
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -24,210 +37,402 @@ public class VendaService {
 
     private final VendaRepository vendaRepository;
     private final PosteRepository posteRepository;
+    private final EstoqueService estoqueService;
 
+    // ===== OPERAÇÕES DE CONSULTA =====
+
+    /**
+     * Lista todas as vendas ordenadas por data (mais recentes primeiro)
+     */
     public List<VendaDTO> listarTodasVendas() {
         log.debug("Listando todas as vendas");
+
         List<Venda> vendas = vendaRepository.findAllByOrderByDataVendaDesc();
-        return vendas.stream().map(this::convertToDTO).collect(Collectors.toList());
+        return convertToDTO(vendas);
     }
 
+    /**
+     * Lista vendas em um período específico
+     */
     public List<VendaDTO> listarVendasPorPeriodo(LocalDate dataInicio, LocalDate dataFim) {
         log.debug("Listando vendas por período: {} a {}", dataInicio, dataFim);
 
-        LocalDateTime inicio = dataInicio != null ? dataInicio.atStartOfDay() : LocalDateTime.of(1900, 1, 1, 0, 0);
-        LocalDateTime fim = dataFim != null ? dataFim.atTime(23, 59, 59) : LocalDateTime.now();
+        LocalDateTime inicio = determinarDataInicio(dataInicio);
+        LocalDateTime fim = determinarDataFim(dataFim);
 
         List<Venda> vendas = vendaRepository.findByDataVendaBetween(inicio, fim);
+
         return vendas.stream()
                 .sorted((v1, v2) -> v2.getDataVenda().compareTo(v1.getDataVenda()))
                 .map(this::convertToDTO)
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Busca uma venda específica por ID
+     */
     public Optional<VendaDTO> buscarVendaPorId(Long id) {
         log.debug("Buscando venda por ID: {}", id);
 
-        if (id == null || id <= 0) {
-            throw new IllegalArgumentException("ID da venda deve ser um número positivo");
-        }
-
+        validarId(id);
         return vendaRepository.findById(id).map(this::convertToDTO);
     }
 
+    // ===== OPERAÇÕES DE RESUMO =====
+
+    /**
+     * Obtém resumo de todas as vendas
+     */
     public ResumoVendasDTO obterResumoVendas() {
         log.debug("Calculando resumo de todas as vendas");
+
         List<Venda> vendas = vendaRepository.findAll();
         return calcularResumoVendas(vendas);
     }
 
+    /**
+     * Obtém resumo de vendas por período
+     */
     public ResumoVendasDTO obterResumoVendasPorPeriodo(LocalDate dataInicio, LocalDate dataFim) {
         log.debug("Calculando resumo de vendas por período: {} a {}", dataInicio, dataFim);
 
-        LocalDateTime inicio = dataInicio != null ? dataInicio.atStartOfDay() : LocalDateTime.of(1900, 1, 1, 0, 0);
-        LocalDateTime fim = dataFim != null ? dataFim.atTime(23, 59, 59) : LocalDateTime.now();
+        LocalDateTime inicio = determinarDataInicio(dataInicio);
+        LocalDateTime fim = determinarDataFim(dataFim);
 
         List<Venda> vendas = vendaRepository.findByDataVendaBetween(inicio, fim);
         return calcularResumoVendas(vendas);
     }
 
+    // ===== OPERAÇÕES DE MODIFICAÇÃO =====
+
+    /**
+     * Cria uma nova venda com validação completa de estoque
+     */
     @Transactional
     public VendaDTO criarVenda(VendaCreateDTO vendaCreateDTO) {
-        log.debug("Criando nova venda: {}", vendaCreateDTO.getTipoVenda());
-
-        // Validações básicas
-        if (vendaCreateDTO == null) {
-            throw new IllegalArgumentException("Dados da venda não podem ser nulos");
-        }
-
-        if (vendaCreateDTO.getDataVenda() == null) {
-            throw new IllegalArgumentException("Data da venda é obrigatória");
-        }
-
-        if (vendaCreateDTO.getTipoVenda() == null) {
-            throw new IllegalArgumentException("Tipo da venda é obrigatório");
-        }
-
-        // Validações específicas por tipo
-        validarDadosPorTipo(vendaCreateDTO);
-
-        Venda venda = new Venda();
-        venda.setDataVenda(vendaCreateDTO.getDataVenda());
-        venda.setTipoVenda(vendaCreateDTO.getTipoVenda());
-        venda.setObservacoes(vendaCreateDTO.getObservacoes());
-
-        // Configurar campos baseados no tipo
-        if (vendaCreateDTO.getPosteId() != null) {
-            Poste poste = posteRepository.findById(vendaCreateDTO.getPosteId())
-                    .orElseThrow(() -> new IllegalArgumentException("Poste não encontrado com ID: " + vendaCreateDTO.getPosteId()));
-
-            if (!poste.getAtivo()) {
-                throw new IllegalArgumentException("Poste inativo não pode ser usado em vendas");
-            }
-
-            venda.setPoste(poste);
-        }
-
-        venda.setQuantidade(vendaCreateDTO.getQuantidade());
-        venda.setFreteEletrons(vendaCreateDTO.getFreteEletrons());
-        venda.setValorVenda(vendaCreateDTO.getValorVenda());
-        venda.setValorExtra(vendaCreateDTO.getValorExtra());
-
-        venda = vendaRepository.save(venda);
-        log.info("Venda criada com sucesso. ID: {}", venda.getId());
-
-        return convertToDTO(venda);
-    }
-
-    @Transactional
-    public VendaDTO atualizarVenda(Long id, VendaDTO vendaDTO) {
-        log.debug("Atualizando venda ID: {}", id);
-
-        if (id == null || id <= 0) {
-            throw new IllegalArgumentException("ID da venda deve ser um número positivo");
-        }
-
-        if (vendaDTO == null) {
-            throw new IllegalArgumentException("Dados da venda não podem ser nulos");
-        }
-
-        Venda venda = vendaRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Venda não encontrada com ID: " + id));
-
-        // Atualizar apenas campos editáveis
-        venda.setFreteEletrons(vendaDTO.getFreteEletrons());
-        venda.setValorVenda(vendaDTO.getValorVenda());
-        venda.setValorExtra(vendaDTO.getValorExtra());
-        venda.setObservacoes(vendaDTO.getObservacoes());
-
-        venda = vendaRepository.save(venda);
-        log.info("Venda atualizada com sucesso. ID: {}", venda.getId());
-
-        return convertToDTO(venda);
-    }
-
-    @Transactional
-    public void deletarVenda(Long id) {
-        log.debug("Deletando venda ID: {}", id);
-
-        if (id == null || id <= 0) {
-            throw new IllegalArgumentException("ID da venda deve ser um número positivo");
-        }
-
-        Venda venda = vendaRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Venda não encontrada com ID: " + id));
+        log.info("Iniciando criação de venda tipo: {}", vendaCreateDTO.getTipoVenda());
 
         try {
-            vendaRepository.delete(venda);
-            log.info("Venda deletada com sucesso. ID: {}", id);
+            // 1. Validações básicas
+            validarDadosVenda(vendaCreateDTO);
+
+            // 2. Validação específica por tipo
+            validarDadosPorTipo(vendaCreateDTO);
+
+            // 3. Verificação de estoque (se necessário)
+            verificarEstoqueSeNecessario(vendaCreateDTO);
+
+            // 4. Criar e persistir venda
+            Venda venda = construirVenda(vendaCreateDTO);
+            venda = vendaRepository.save(venda);
+
+            // 5. Atualizar estoque (se necessário)
+            atualizarEstoqueSeNecessario(venda);
+
+            // 6. Log de sucesso
+            log.info("Venda criada com sucesso. ID: {}, Tipo: {}", venda.getId(), venda.getTipoVenda());
+
+            return convertToDTO(venda);
+
         } catch (Exception e) {
-            log.error("Erro ao deletar venda ID: {}. Erro: {}", id, e.getMessage());
+            log.error("Erro ao criar venda: {}", e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    /**
+     * Atualiza uma venda existente (campos editáveis apenas)
+     */
+    @Transactional
+    public VendaDTO atualizarVenda(Long id, VendaDTO vendaDTO) {
+        log.info("Iniciando atualização da venda ID: {}", id);
+
+        try {
+            validarId(id);
+            validarDadosEdicao(vendaDTO);
+
+            Venda venda = buscarVendaOuLancarExcecao(id);
+
+            // Atualizar apenas campos editáveis (sem mexer no estoque)
+            atualizarCamposEditaveis(venda, vendaDTO);
+
+            venda = vendaRepository.save(venda);
+
+            log.info("Venda atualizada com sucesso. ID: {}", id);
+            return convertToDTO(venda);
+
+        } catch (Exception e) {
+            log.error("Erro ao atualizar venda ID {}: {}", id, e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    /**
+     * Deleta uma venda e reverte o estoque automaticamente
+     */
+    @Transactional
+    public void deletarVenda(Long id) {
+        log.info("Iniciando exclusão da venda ID: {}", id);
+
+        try {
+            validarId(id);
+            Venda venda = buscarVendaOuLancarExcecao(id);
+
+            // Reverter estoque antes de deletar
+            reverterEstoqueSeNecessario(venda);
+
+            // Deletar venda
+            vendaRepository.delete(venda);
+
+            log.info("Venda deletada com sucesso. ID: {}, Estoque revertido automaticamente", id);
+
+        } catch (Exception e) {
+            log.error("Erro ao deletar venda ID {}: {}", id, e.getMessage(), e);
             throw new RuntimeException("Erro ao deletar venda: " + e.getMessage(), e);
         }
     }
 
-    private void validarDadosPorTipo(VendaCreateDTO vendaCreateDTO) {
-        switch (vendaCreateDTO.getTipoVenda()) {
-            case E:
-                if (vendaCreateDTO.getValorExtra() == null || vendaCreateDTO.getValorExtra().compareTo(BigDecimal.ZERO) <= 0) {
-                    throw new IllegalArgumentException("Valor extra deve ser maior que zero para vendas tipo E");
-                }
-                break;
+    // ===== VALIDAÇÕES =====
 
-            case V:
-                if (vendaCreateDTO.getPosteId() == null) {
-                    throw new IllegalArgumentException("Poste é obrigatório para vendas tipo V");
-                }
-                if (vendaCreateDTO.getValorVenda() == null || vendaCreateDTO.getValorVenda().compareTo(BigDecimal.ZERO) <= 0) {
-                    throw new IllegalArgumentException("Valor de venda deve ser maior que zero para vendas tipo V");
-                }
-                if (vendaCreateDTO.getQuantidade() == null || vendaCreateDTO.getQuantidade() <= 0) {
-                    throw new IllegalArgumentException("Quantidade deve ser maior que zero para vendas tipo V");
-                }
-                break;
+    private void validarDadosVenda(VendaCreateDTO vendaDTO) {
+        if (vendaDTO == null) {
+            throw new IllegalArgumentException("Dados da venda não podem ser nulos");
+        }
 
-            case L:
-                if (vendaCreateDTO.getPosteId() == null) {
-                    throw new IllegalArgumentException("Poste de referência é obrigatório para vendas tipo L");
-                }
-                if (vendaCreateDTO.getQuantidade() == null || vendaCreateDTO.getQuantidade() <= 0) {
-                    throw new IllegalArgumentException("Quantidade deve ser maior que zero para vendas tipo L");
-                }
-                // Frete pode ser zero para vendas tipo L
-                break;
+        if (vendaDTO.getDataVenda() == null) {
+            throw new IllegalArgumentException("Data da venda é obrigatória");
+        }
 
-            default:
-                throw new IllegalArgumentException("Tipo de venda inválido: " + vendaCreateDTO.getTipoVenda());
+        if (vendaDTO.getTipoVenda() == null) {
+            throw new IllegalArgumentException("Tipo da venda é obrigatório");
         }
     }
 
+    private void validarDadosPorTipo(VendaCreateDTO vendaDTO) {
+        switch (vendaDTO.getTipoVenda()) {
+            case E:
+                validarVendaExtra(vendaDTO);
+                break;
+            case V:
+                validarVendaNormal(vendaDTO);
+                break;
+            case L:
+                validarVendaLoja(vendaDTO);
+                break;
+            default:
+                throw new IllegalArgumentException("Tipo de venda inválido: " + vendaDTO.getTipoVenda());
+        }
+    }
+
+    private void validarVendaExtra(VendaCreateDTO vendaDTO) {
+        if (vendaDTO.getValorExtra() == null || vendaDTO.getValorExtra().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Valor extra deve ser maior que zero para vendas tipo E");
+        }
+    }
+
+    private void validarVendaNormal(VendaCreateDTO vendaDTO) {
+        if (vendaDTO.getPosteId() == null) {
+            throw new IllegalArgumentException("Poste é obrigatório para vendas tipo V");
+        }
+
+        if (vendaDTO.getValorVenda() == null || vendaDTO.getValorVenda().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Valor de venda deve ser maior que zero para vendas tipo V");
+        }
+
+        if (vendaDTO.getQuantidade() == null || vendaDTO.getQuantidade() <= 0) {
+            throw new IllegalArgumentException("Quantidade deve ser maior que zero para vendas tipo V");
+        }
+    }
+
+    private void validarVendaLoja(VendaCreateDTO vendaDTO) {
+        if (vendaDTO.getPosteId() == null) {
+            throw new IllegalArgumentException("Poste de referência é obrigatório para vendas tipo L");
+        }
+
+        if (vendaDTO.getQuantidade() == null || vendaDTO.getQuantidade() <= 0) {
+            throw new IllegalArgumentException("Quantidade deve ser maior que zero para vendas tipo L");
+        }
+    }
+
+    private void validarDadosEdicao(VendaDTO vendaDTO) {
+        if (vendaDTO == null) {
+            throw new IllegalArgumentException("Dados da venda não podem ser nulos");
+        }
+    }
+
+    private void validarId(Long id) {
+        if (id == null || id <= 0) {
+            throw new IllegalArgumentException("ID da venda deve ser um número positivo");
+        }
+    }
+
+    // ===== OPERAÇÕES DE ESTOQUE =====
+
+    private void verificarEstoqueSeNecessario(VendaCreateDTO vendaDTO) {
+        if (!precisaVerificarEstoque(vendaDTO)) {
+            return;
+        }
+
+        Long posteId = vendaDTO.getPosteId();
+        Integer quantidade = vendaDTO.getQuantidade() != null ? vendaDTO.getQuantidade() : 1;
+
+        log.debug("Verificando estoque. Poste ID: {}, Quantidade: {}", posteId, quantidade);
+
+        if (!estoqueService.verificarEstoqueSuficiente(posteId, quantidade)) {
+            Optional<EstoqueDTO> estoqueOpt = estoqueService.buscarEstoquePorPoste(posteId);
+            int estoqueDisponivel = estoqueOpt.map(EstoqueDTO::getQuantidadeAtual).orElse(0);
+
+            String mensagem = String.format(
+                    "Estoque insuficiente. Disponível: %d, Solicitado: %d",
+                    estoqueDisponivel,
+                    quantidade
+            );
+
+            log.warn("Venda rejeitada por estoque insuficiente. {}", mensagem);
+            throw new IllegalArgumentException(mensagem);
+        }
+
+        log.debug("Estoque verificado com sucesso. Quantidade disponível suficiente.");
+    }
+
+    private void atualizarEstoqueSeNecessario(Venda venda) {
+        if (!precisaAtualizarEstoque(venda)) {
+            return;
+        }
+
+        Long posteId = venda.getPoste().getId();
+        Integer quantidade = venda.getQuantidade() != null ? venda.getQuantidade() : 1;
+
+        log.debug("Reduzindo estoque. Poste ID: {}, Quantidade: {}", posteId, quantidade);
+
+        boolean estoqueReduzido = estoqueService.removerEstoque(posteId, quantidade);
+
+        if (!estoqueReduzido) {
+            // Rollback da venda se não conseguir reduzir o estoque
+            vendaRepository.delete(venda);
+
+            String mensagem = String.format(
+                    "Erro ao reduzir estoque após criar venda. Poste ID: %d, Quantidade: %d",
+                    posteId,
+                    quantidade
+            );
+
+            log.error(mensagem);
+            throw new IllegalArgumentException("Erro ao reduzir estoque. Venda cancelada.");
+        }
+
+        log.info("Estoque reduzido com sucesso. Venda ID: {}, Poste: {}, Quantidade: {}",
+                venda.getId(), venda.getPoste().getCodigo(), quantidade);
+    }
+
+    private void reverterEstoqueSeNecessario(Venda venda) {
+        if (!precisaAtualizarEstoque(venda)) {
+            return;
+        }
+
+        Long posteId = venda.getPoste().getId();
+        Integer quantidade = venda.getQuantidade() != null ? venda.getQuantidade() : 1;
+
+        log.debug("Revertendo estoque. Poste ID: {}, Quantidade: {}", posteId, quantidade);
+
+        try {
+            estoqueService.adicionarEstoque(
+                    posteId,
+                    quantidade,
+                    "Devolução por exclusão de venda ID: " + venda.getId()
+            );
+
+            log.info("Estoque revertido com sucesso. Venda ID: {}, Poste: {}, Quantidade: {}",
+                    venda.getId(), venda.getPoste().getCodigo(), quantidade);
+
+        } catch (Exception e) {
+            log.error("Erro ao reverter estoque para venda ID {}: {}", venda.getId(), e.getMessage());
+            // Não falha a exclusão da venda por erro na reversão do estoque
+            // mas registra o erro para auditoria
+        }
+    }
+
+    private boolean precisaVerificarEstoque(VendaCreateDTO vendaDTO) {
+        return (vendaDTO.getTipoVenda() == Venda.TipoVenda.V ||
+                vendaDTO.getTipoVenda() == Venda.TipoVenda.L) &&
+                vendaDTO.getPosteId() != null;
+    }
+
+    private boolean precisaAtualizarEstoque(Venda venda) {
+        return (venda.getTipoVenda() == Venda.TipoVenda.V ||
+                venda.getTipoVenda() == Venda.TipoVenda.L) &&
+                venda.getPoste() != null;
+    }
+
+    // ===== CONSTRUÇÃO DE OBJETOS =====
+
+    private Venda construirVenda(VendaCreateDTO vendaDTO) {
+        Venda venda = new Venda();
+        venda.setDataVenda(vendaDTO.getDataVenda());
+        venda.setTipoVenda(vendaDTO.getTipoVenda());
+        venda.setObservacoes(vendaDTO.getObservacoes());
+
+        // Configurar poste se necessário
+        if (vendaDTO.getPosteId() != null) {
+            Poste poste = buscarPosteOuLancarExcecao(vendaDTO.getPosteId());
+            validarPosteAtivo(poste);
+            venda.setPoste(poste);
+        }
+
+        // Configurar campos específicos por tipo
+        configurarCamposPorTipo(venda, vendaDTO);
+
+        return venda;
+    }
+
+    private void configurarCamposPorTipo(Venda venda, VendaCreateDTO vendaDTO) {
+        venda.setQuantidade(vendaDTO.getQuantidade());
+        venda.setFreteEletrons(vendaDTO.getFreteEletrons());
+        venda.setValorVenda(vendaDTO.getValorVenda());
+        venda.setValorExtra(vendaDTO.getValorExtra());
+    }
+
+    private void atualizarCamposEditaveis(Venda venda, VendaDTO vendaDTO) {
+        // Apenas campos que podem ser editados sem afetar estoque
+        venda.setFreteEletrons(vendaDTO.getFreteEletrons());
+        venda.setValorVenda(vendaDTO.getValorVenda());
+        venda.setValorExtra(vendaDTO.getValorExtra());
+        venda.setObservacoes(vendaDTO.getObservacoes());
+    }
+
+    // ===== BUSCA E VALIDAÇÃO DE ENTIDADES =====
+
+    private Venda buscarVendaOuLancarExcecao(Long id) {
+        return vendaRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Venda não encontrada com ID: " + id));
+    }
+
+    private Poste buscarPosteOuLancarExcecao(Long posteId) {
+        return posteRepository.findById(posteId)
+                .orElseThrow(() -> new IllegalArgumentException("Poste não encontrado com ID: " + posteId));
+    }
+
+    private void validarPosteAtivo(Poste poste) {
+        if (!poste.getAtivo()) {
+            throw new IllegalArgumentException("Poste inativo não pode ser usado em vendas");
+        }
+    }
+
+    // ===== CÁLCULOS DE RESUMO =====
+
     private ResumoVendasDTO calcularResumoVendas(List<Venda> vendas) {
-        // Separar por tipo
-        List<Venda> vendasE = vendas.stream().filter(v -> v.getTipoVenda() == Venda.TipoVenda.E).collect(Collectors.toList());
-        List<Venda> vendasV = vendas.stream().filter(v -> v.getTipoVenda() == Venda.TipoVenda.V).collect(Collectors.toList());
-        List<Venda> vendasL = vendas.stream().filter(v -> v.getTipoVenda() == Venda.TipoVenda.L).collect(Collectors.toList());
+        log.debug("Calculando resumo para {} vendas", vendas.size());
+
+        // Separar vendas por tipo
+        List<Venda> vendasE = filtrarPorTipo(vendas, Venda.TipoVenda.E);
+        List<Venda> vendasV = filtrarPorTipo(vendas, Venda.TipoVenda.V);
+        List<Venda> vendasL = filtrarPorTipo(vendas, Venda.TipoVenda.L);
 
         // Calcular totais
-        BigDecimal totalVendaPostes = vendasV.stream()
-                .map(v -> {
-                    if (v.getPoste() != null && v.getQuantidade() != null) {
-                        return v.getPoste().getPreco().multiply(BigDecimal.valueOf(v.getQuantidade()));
-                    }
-                    return BigDecimal.ZERO;
-                })
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        BigDecimal valorTotalVendas = vendasV.stream()
-                .map(v -> v.getValorVenda() != null ? v.getValorVenda() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        BigDecimal totalFreteEletrons = vendasL.stream()
-                .map(v -> v.getFreteEletrons() != null ? v.getFreteEletrons() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        BigDecimal valorTotalExtras = vendasE.stream()
-                .map(v -> v.getValorExtra() != null ? v.getValorExtra() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
+        BigDecimal totalVendaPostes = calcularCustoPostes(vendasV);
+        BigDecimal valorTotalVendas = calcularValorVendas(vendasV);
+        BigDecimal totalFreteEletrons = calcularFreteEletrons(vendasL);
+        BigDecimal valorTotalExtras = calcularValorExtras(vendasE);
         BigDecimal totalContribuicoesExtras = valorTotalExtras.add(totalFreteEletrons);
 
         return new ResumoVendasDTO(
@@ -244,8 +449,55 @@ public class VendaService {
         );
     }
 
+    private List<Venda> filtrarPorTipo(List<Venda> vendas, Venda.TipoVenda tipo) {
+        return vendas.stream()
+                .filter(v -> v.getTipoVenda() == tipo)
+                .collect(Collectors.toList());
+    }
+
+    private BigDecimal calcularCustoPostes(List<Venda> vendasV) {
+        return vendasV.stream()
+                .map(this::calcularCustoPosteVenda)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private BigDecimal calcularCustoPosteVenda(Venda venda) {
+        if (venda.getPoste() != null && venda.getQuantidade() != null) {
+            return venda.getPoste().getPreco().multiply(BigDecimal.valueOf(venda.getQuantidade()));
+        }
+        return BigDecimal.ZERO;
+    }
+
+    private BigDecimal calcularValorVendas(List<Venda> vendasV) {
+        return vendasV.stream()
+                .map(v -> v.getValorVenda() != null ? v.getValorVenda() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private BigDecimal calcularFreteEletrons(List<Venda> vendasL) {
+        return vendasL.stream()
+                .map(v -> v.getFreteEletrons() != null ? v.getFreteEletrons() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private BigDecimal calcularValorExtras(List<Venda> vendasE) {
+        return vendasE.stream()
+                .map(v -> v.getValorExtra() != null ? v.getValorExtra() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    // ===== CONVERSÕES DTO =====
+
+    private List<VendaDTO> convertToDTO(List<Venda> vendas) {
+        return vendas.stream()
+                .map(this::convertToDTO)
+                .collect(Collectors.toList());
+    }
+
     private VendaDTO convertToDTO(Venda venda) {
         VendaDTO dto = new VendaDTO();
+
+        // Campos básicos
         dto.setId(venda.getId());
         dto.setDataVenda(venda.getDataVenda());
         dto.setTipoVenda(venda.getTipoVenda());
@@ -255,6 +507,7 @@ public class VendaService {
         dto.setValorExtra(venda.getValorExtra());
         dto.setObservacoes(venda.getObservacoes());
 
+        // Informações do poste (se existir)
         if (venda.getPoste() != null) {
             dto.setPosteId(venda.getPoste().getId());
             dto.setCodigoPoste(venda.getPoste().getCodigo());
@@ -262,5 +515,19 @@ public class VendaService {
         }
 
         return dto;
+    }
+
+    // ===== UTILITÁRIOS =====
+
+    private LocalDateTime determinarDataInicio(LocalDate dataInicio) {
+        return dataInicio != null ?
+                dataInicio.atStartOfDay() :
+                LocalDateTime.of(1900, 1, 1, 0, 0);
+    }
+
+    private LocalDateTime determinarDataFim(LocalDate dataFim) {
+        return dataFim != null ?
+                dataFim.atTime(23, 59, 59) :
+                LocalDateTime.now();
     }
 }
