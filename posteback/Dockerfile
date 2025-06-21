@@ -4,17 +4,8 @@ FROM maven:3.9-eclipse-temurin-17 AS build
 # Definir diretório de trabalho
 WORKDIR /app
 
-# Copiar arquivos de configuração do Maven primeiro (para cache de dependências)
-COPY pom.xml .
-COPY .mvn .mvn
-COPY mvnw .
-COPY mvnw.cmd .
-
-# Baixar dependências (será cacheado se o pom.xml não mudar)
-RUN mvn dependency:go-offline -B
-
-# Copiar código fonte
-COPY src ./src
+# Copiar todos os arquivos do projeto (já que estamos executando de dentro de posteback/)
+COPY . .
 
 # Fazer o build da aplicação
 RUN mvn clean package -DskipTests
