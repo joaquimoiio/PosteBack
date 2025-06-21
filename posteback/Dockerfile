@@ -4,54 +4,37 @@ FROM maven:3.9-eclipse-temurin-17 AS build
 # Definir diretório de trabalho
 WORKDIR /app
 
-# Copiar tudo que está no contexto
-COPY . .
+# Copiar arquivos do projeto (agora estamos dentro da pasta posteback)
+COPY pom.xml ./
+COPY src ./src/
 
-# Debug: Mostrar o que foi copiado
-RUN echo "=== ARQUIVOS COPIADOS ===" && find . -name "pom.xml" -o -name "src" -type d
+# Fazer o build da aplicação
+RUN mvn clean package -DskipTests
 
-# Tentar encontrar o pom.xml e entrar no diretório correto
-RUN if [ -f "./pom.xml" ]; then \
-        echo "✅ pom.xml encontrado na raiz"; \
-    elif [ -f "./posteback/pom.xml" ]; then \
-        echo "✅ pom.xml encontrado em posteback/"; \
-        cd ./posteback; \
-    else \
-        echo "❌ pom.xml não encontrado em lugar nenhum!"; \
-        ls -la; \
-        exit 1; \
-    fi
-
-# Fazer o build - ajustar o diretório se necessário
-RUN if [ -f "./pom.xml" ]; then \
-        mvn clean package -DskipTests; \
-    elif [ -f "./posteback/pom.xml" ]; then \
-        cd ./posteback && mvn clean package -DskipTests; \
-    else \
-        echo "❌ Não foi possível fazer o build!"; \
-        exit 1; \
-    fi
-
-# Encontrar o JAR gerado
-RUN echo "=== PROCURANDO JAR ===" && find . -name "*.jar" -type f
+# Debug: Mostrar o que foi gerado
+RUN echo "=== ARQUIVOS GERADOS ===" && ls -la target/
 
 # Estágio final - imagem mínima para execução
 FROM eclipse-temurin:17-jre-alpine
 
+# Instalar curl para health check
+RUN apk add --no-cache curl
+
 # Criar diretório para a aplicação
 WORKDIR /app
 
-# Copiar o JAR do caminho correto (onde foi encontrado)
-COPY --from=build /app/posteback/target/vendas-postes-1.0.0.jar app.jar
-
-# Variáveis de ambiente padrão (podem ser sobrescritas)
-ENV DATABASE_URL=jdbc:postgresql://dpg-d1bg2895pdvs73dsavg0-a:5432/ativaposte
-ENV DATABASE_USERNAME=admin
-ENV DATABASE_PASSWORD=aa303O04NteXaSLTrM0uOQ14Q2VnRKIw
-ENV PORT=5432
+# Copiar o JAR do estágio de build
+COPY --from=build /app/target/vendas-postes-1.0.0.jar app.jar
 
 # Expor a porta 8080
 EXPOSE 8080
 
+# Variáveis de ambiente padrão (serão sobrescritas pelo Render)
+ENV JAVA_OPTS="-Xmx512m -Xms256m"
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD curl -f http://localhost:8080/api/postes || exit 1
+
 # Comando para executar a aplicação
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
