@@ -128,6 +128,46 @@ public class EstoqueService {
         return false;
     }
 
+    /**
+     * NOVO MÉTODO: Reduz estoque sem validação, permite negativo
+     * Usado pelo VendaService para permitir vendas com estoque insuficiente
+     */
+    @Transactional
+    public void reduzirEstoqueForcado(Long posteId, Integer quantidade) {
+        log.debug("Reduzindo estoque FORÇADAMENTE (pode ficar negativo). Poste ID: {}, Quantidade: {}", posteId, quantidade);
+
+        if (quantidade <= 0) {
+            throw new IllegalArgumentException("Quantidade deve ser maior que zero");
+        }
+
+        Poste poste = posteRepository.findById(posteId)
+                .orElseThrow(() -> new IllegalArgumentException("Poste não encontrado com ID: " + posteId));
+
+        Optional<Estoque> estoqueOpt = estoqueRepository.findByPoste(poste);
+
+        Estoque estoque;
+        if (estoqueOpt.isPresent()) {
+            estoque = estoqueOpt.get();
+        } else {
+            // Criar entrada de estoque zerada se não existir
+            estoque = new Estoque(poste, 0);
+        }
+
+        // Reduzir quantidade SEM validação (pode ficar negativo)
+        estoque.setQuantidadeAtual(estoque.getQuantidadeAtual() - quantidade);
+        estoque.setDataAtualizacao(java.time.LocalDateTime.now());
+
+        estoqueRepository.save(estoque);
+
+        if (estoque.getQuantidadeAtual() < 0) {
+            log.warn("⚠️ ESTOQUE NEGATIVO! Poste: {}, Quantidade atual: {}",
+                    poste.getCodigo(), estoque.getQuantidadeAtual());
+        } else {
+            log.info("Estoque reduzido com sucesso. Poste: {}, Nova quantidade: {}",
+                    poste.getCodigo(), estoque.getQuantidadeAtual());
+        }
+    }
+
     public boolean verificarEstoqueSuficiente(Long posteId, Integer quantidade) {
         log.debug("Verificando estoque suficiente. Poste ID: {}, Quantidade: {}", posteId, quantidade);
 

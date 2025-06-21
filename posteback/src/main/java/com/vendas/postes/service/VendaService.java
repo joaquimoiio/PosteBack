@@ -18,17 +18,15 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
- * Service refatorado para gerenciamento de vendas com integração completa ao estoque.
+ * Service para gerenciamento de vendas SEM validação de estoque.
  *
- * Responsabilidades:
- * - CRUD de vendas
- * - Validação de dados
- * - Integração com estoque
- * - Cálculo de resumos
- * - Auditoria de operações
+ * MODIFICAÇÕES IMPLEMENTADAS:
+ * - Remoção da verificação de estoque suficiente
+ * - Permitir estoque negativo
+ * - Atualização automática do estoque após venda
  *
  * @author Sistema de Vendas de Postes
- * @version 2.0
+ * @version 2.1
  */
 @Service
 @RequiredArgsConstructor
@@ -106,7 +104,10 @@ public class VendaService {
     // ===== OPERAÇÕES DE MODIFICAÇÃO =====
 
     /**
-     * Cria uma nova venda com validação completa de estoque
+     * Cria uma nova venda SEM verificação de estoque
+     *
+     * MODIFICAÇÃO: Removida a verificação de estoque suficiente
+     * Agora permite vendas mesmo com estoque insuficiente (estoque pode ficar negativo)
      */
     @Transactional
     public VendaDTO criarVenda(VendaCreateDTO vendaCreateDTO) {
@@ -119,15 +120,15 @@ public class VendaService {
             // 2. Validação específica por tipo
             validarDadosPorTipo(vendaCreateDTO);
 
-            // 3. Verificação de estoque (se necessário)
-            verificarEstoqueSeNecessario(vendaCreateDTO);
+            // 3. REMOÇÃO: Não há mais verificação de estoque
+            // A venda pode ser realizada mesmo com estoque insuficiente
 
             // 4. Criar e persistir venda
             Venda venda = construirVenda(vendaCreateDTO);
             venda = vendaRepository.save(venda);
 
-            // 5. Atualizar estoque (se necessário)
-            atualizarEstoqueSeNecessario(venda);
+            // 5. Atualizar estoque (pode ficar negativo)
+            atualizarEstoqueSemValidacao(venda);
 
             // 6. Log de sucesso
             log.info("Venda criada com sucesso. ID: {}, Tipo: {}", venda.getId(), venda.getTipoVenda());
@@ -266,36 +267,13 @@ public class VendaService {
         }
     }
 
-    // ===== OPERAÇÕES DE ESTOQUE =====
+    // ===== OPERAÇÕES DE ESTOQUE (MODIFICADAS) =====
 
-    private void verificarEstoqueSeNecessario(VendaCreateDTO vendaDTO) {
-        if (!precisaVerificarEstoque(vendaDTO)) {
-            return;
-        }
-
-        Long posteId = vendaDTO.getPosteId();
-        Integer quantidade = vendaDTO.getQuantidade() != null ? vendaDTO.getQuantidade() : 1;
-
-        log.debug("Verificando estoque. Poste ID: {}, Quantidade: {}", posteId, quantidade);
-
-        if (!estoqueService.verificarEstoqueSuficiente(posteId, quantidade)) {
-            Optional<EstoqueDTO> estoqueOpt = estoqueService.buscarEstoquePorPoste(posteId);
-            int estoqueDisponivel = estoqueOpt.map(EstoqueDTO::getQuantidadeAtual).orElse(0);
-
-            String mensagem = String.format(
-                    "Estoque insuficiente. Disponível: %d, Solicitado: %d",
-                    estoqueDisponivel,
-                    quantidade
-            );
-
-            log.warn("Venda rejeitada por estoque insuficiente. {}", mensagem);
-            throw new IllegalArgumentException(mensagem);
-        }
-
-        log.debug("Estoque verificado com sucesso. Quantidade disponível suficiente.");
-    }
-
-    private void atualizarEstoqueSeNecessario(Venda venda) {
+    /**
+     * NOVA IMPLEMENTAÇÃO: Atualiza estoque sem validação
+     * Permite que o estoque fique negativo
+     */
+    private void atualizarEstoqueSemValidacao(Venda venda) {
         if (!precisaAtualizarEstoque(venda)) {
             return;
         }
@@ -303,26 +281,19 @@ public class VendaService {
         Long posteId = venda.getPoste().getId();
         Integer quantidade = venda.getQuantidade() != null ? venda.getQuantidade() : 1;
 
-        log.debug("Reduzindo estoque. Poste ID: {}, Quantidade: {}", posteId, quantidade);
+        log.debug("Reduzindo estoque SEM validação. Poste ID: {}, Quantidade: {}", posteId, quantidade);
 
-        boolean estoqueReduzido = estoqueService.removerEstoque(posteId, quantidade);
+        try {
+            // Força a redução do estoque, mesmo que fique negativo
+            estoqueService.reduzirEstoqueForcado(posteId, quantidade);
 
-        if (!estoqueReduzido) {
-            // Rollback da venda se não conseguir reduzir o estoque
-            vendaRepository.delete(venda);
+            log.info("Estoque reduzido (pode estar negativo). Venda ID: {}, Poste: {}, Quantidade: {}",
+                    venda.getId(), venda.getPoste().getCodigo(), quantidade);
 
-            String mensagem = String.format(
-                    "Erro ao reduzir estoque após criar venda. Poste ID: %d, Quantidade: %d",
-                    posteId,
-                    quantidade
-            );
-
-            log.error(mensagem);
-            throw new IllegalArgumentException("Erro ao reduzir estoque. Venda cancelada.");
+        } catch (Exception e) {
+            log.error("Erro ao reduzir estoque para venda ID {}: {}", venda.getId(), e.getMessage());
+            // Não falha a venda por erro no estoque
         }
-
-        log.info("Estoque reduzido com sucesso. Venda ID: {}, Poste: {}, Quantidade: {}",
-                venda.getId(), venda.getPoste().getCodigo(), quantidade);
     }
 
     private void reverterEstoqueSeNecessario(Venda venda) {
@@ -350,12 +321,6 @@ public class VendaService {
             // Não falha a exclusão da venda por erro na reversão do estoque
             // mas registra o erro para auditoria
         }
-    }
-
-    private boolean precisaVerificarEstoque(VendaCreateDTO vendaDTO) {
-        return (vendaDTO.getTipoVenda() == Venda.TipoVenda.V ||
-                vendaDTO.getTipoVenda() == Venda.TipoVenda.L) &&
-                vendaDTO.getPosteId() != null;
     }
 
     private boolean precisaAtualizarEstoque(Venda venda) {
