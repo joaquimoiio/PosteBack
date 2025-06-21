@@ -4,14 +4,20 @@ FROM maven:3.9-eclipse-temurin-17 AS build
 # Definir diretório de trabalho
 WORKDIR /app
 
-# Copiar arquivos do projeto (agora estamos dentro da pasta posteback)
-COPY pom.xml ./
-COPY src ./src/
+# Copiar arquivos do projeto backend da pasta posteback
+COPY posteback/pom.xml ./
+COPY posteback/src ./src/
+
+# Debug: Mostrar estrutura de arquivos
+RUN echo "=== ESTRUTURA DE ARQUIVOS ===" && \
+    echo "Arquivos na raiz:" && ls -la && \
+    echo "Arquivos em src:" && ls -la src/ && \
+    echo "Conteúdo do pom.xml:" && head -10 pom.xml
 
 # Fazer o build da aplicação
 RUN mvn clean package -DskipTests
 
-# Debug: Mostrar o que foi gerado
+# Debug: Mostrar o que foi gerado no target
 RUN echo "=== ARQUIVOS GERADOS ===" && ls -la target/
 
 # Estágio final - imagem mínima para execução
@@ -26,10 +32,13 @@ WORKDIR /app
 # Copiar o JAR do estágio de build
 COPY --from=build /app/target/vendas-postes-1.0.0.jar app.jar
 
+# Verificar se o JAR foi copiado
+RUN ls -la app.jar
+
 # Expor a porta 8080
 EXPOSE 8080
 
-# Variáveis de ambiente padrão (serão sobrescritas pelo Render)
+# Variáveis de ambiente padrão
 ENV JAVA_OPTS="-Xmx512m -Xms256m"
 
 # Health check
