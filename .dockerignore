@@ -1,0 +1,30 @@
+# Ignorar arquivos desnecessários para o build Docker
+
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+*.iml
+*.iws
+.vscode
+
+# Maven
+posteback/target
+posteback/.mvn
+
+# Logs
+*.log
+
+# Node modules (se houver frontend)
+node_modules
+npm-debug.log*
+
+# Documentação
+README.md
+*.md
+
+# Outros
+.DS_Store
+Thumbs.db
