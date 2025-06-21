@@ -41,9 +41,8 @@ FROM eclipse-temurin:17-jre-alpine
 # Criar diretório para a aplicação
 WORKDIR /app
 
-# Copiar o JAR - tentar ambos os caminhos possíveis
-COPY --from=build /app/target/*.jar /app/posteback/target/*.jar ./
-RUN ls -la && mv *.jar app.jar 2>/dev/null || echo "JAR já renomeado"
+# Copiar o JAR do caminho correto (onde foi encontrado)
+COPY --from=build /app/posteback/target/vendas-postes-1.0.0.jar app.jar
 
 # Expor a porta 8080
 EXPOSE 8080
