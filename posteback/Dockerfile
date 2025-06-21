@@ -4,8 +4,11 @@ FROM maven:3.9-eclipse-temurin-17 AS build
 # Definir diretório de trabalho
 WORKDIR /app
 
-# Copiar todos os arquivos do projeto (já que estamos executando de dentro de posteback/)
+# Copiar todos os arquivos do contexto de build
 COPY . .
+
+# Verificar se o pom.xml existe (para debug)
+RUN ls -la && echo "Verificando se pom.xml existe..." && test -f pom.xml || (echo "❌ pom.xml não encontrado!" && exit 1)
 
 # Fazer o build da aplicação
 RUN mvn clean package -DskipTests
