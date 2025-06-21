@@ -44,6 +44,12 @@ WORKDIR /app
 # Copiar o JAR do caminho correto (onde foi encontrado)
 COPY --from=build /app/posteback/target/vendas-postes-1.0.0.jar app.jar
 
+# Variáveis de ambiente padrão (podem ser sobrescritas)
+ENV DATABASE_URL=jdbc:postgresql://dpg-d1bg2895pdvs73dsavg0-a:5432/ativaposte
+ENV DATABASE_USERNAME=admin
+ENV DATABASE_PASSWORD=aa303O04NteXaSLTrM0uOQ14Q2VnRKIw
+ENV PORT=5432
+
 # Expor a porta 8080
 EXPOSE 8080
 
