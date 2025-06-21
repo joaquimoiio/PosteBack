@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: vendas-postes-api
+    env: docker
+    plan: free
+    dockerfilePath: ./posteback/Dockerfile
+    dockerContext: ./posteback
+    envVars:
+      - key: DATABASE_URL
+        value: jdbc:postgresql://dpg-d1bg2895pdvs73dsavg0-a:5432/ativaposte
+      - key: DATABASE_USERNAME
+        value: admin
+      - key: DATABASE_PASSWORD
+        value: aa303O04NteXaSLTrM0uOQ14Q2VnRKIw
+      - key: PORT
+        value: 8080
+      - key: SPRING_PROFILES_ACTIVE
+        value: production
+      - key: JAVA_OPTS
+        value: "-Xmx512m -Xms256m"
