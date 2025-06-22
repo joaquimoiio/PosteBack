@@ -110,7 +110,6 @@ public class DataLoader implements CommandLineRunner {
                     new Poste(null, "91241", "Mureta Mono", new BigDecimal("600.00"), true),
                     new Poste(null, "91242", "Mureta Trifásica", new BigDecimal("710.00"), true),
 
-                    // Itens especiais/devoluções
                     new Poste(null, "CARGA-TRI", "Carga Trifásica - devolveu 04/01", new BigDecimal("0.00"), false),
                     new Poste(null, "CARGA-BI-MONO", "Carga Bi+Mono - devolveu 04/01", new BigDecimal("0.00"), false),
                     new Poste(null, "FRETE", "Somente Frete", new BigDecimal("0.00"), false)
