@@ -94,7 +94,7 @@ public class DataLoader implements CommandLineRunner {
                     new Poste(null, "1309", "Poste DT 7/100", new BigDecimal("400.00"), true),
                     new Poste(null, "3588", "Poste DT 8/300", new BigDecimal("0.00"), false),
 
-                    // Muretas e Padrões
+
                     new Poste(null, "MURETA-TRI", "Mureta sub trifasica", new BigDecimal("700.00"), true),
                     new Poste(null, "389", "Padrão de agua", new BigDecimal("200.00"), true),
                     new Poste(null, "MURETA-3CX", "Mureta sub 3cx monofasica", new BigDecimal("810.00"), true)
