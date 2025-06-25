@@ -1,5 +1,6 @@
 package com.vendas.postes.service;
 
+import com.vendas.postes.config.TenantContext;
 import com.vendas.postes.dto.EstoqueDTO;
 import com.vendas.postes.model.Estoque;
 import com.vendas.postes.model.Poste;
@@ -21,6 +22,105 @@ public class EstoqueService {
 
     private final EstoqueRepository estoqueRepository;
     private final PosteRepository posteRepository;
+
+    // ===== MÉTODOS ESPECÍFICOS POR TENANT =====
+
+    /**
+     * Lista todo o estoque do tenant atual
+     */
+    public List<EstoqueDTO> listarTodoEstoquePorTenant() {
+        log.debug("Listando todo o estoque por tenant: {}", TenantContext.getCurrentTenantValue());
+
+        String tenantId = TenantContext.getCurrentTenantValue();
+        if (tenantId == null) {
+            tenantId = "vermelho"; // Default
+        }
+
+        // Buscar todos os postes ativos do tenant atual
+        List<Poste> postesAtivos = posteRepository.findByTenantIdAndAtivoTrue(tenantId);
+
+        return postesAtivos.stream().map(poste -> {
+            Optional<Estoque> estoqueOpt = estoqueRepository.findByPoste(poste);
+
+            if (estoqueOpt.isPresent()) {
+                return convertToDTO(estoqueOpt.get());
+            } else {
+                // Criar entrada de estoque zerada para postes sem estoque
+                return criarEstoqueDTOZerado(poste);
+            }
+        }).collect(Collectors.toList());
+    }
+
+    /**
+     * Lista estoques com quantidade do tenant atual
+     */
+    public List<EstoqueDTO> listarEstoquesComQuantidadePorTenant() {
+        log.debug("Listando estoques com quantidade por tenant: {}", TenantContext.getCurrentTenantValue());
+
+        String tenantId = TenantContext.getCurrentTenantValue();
+        if (tenantId == null) {
+            tenantId = "vermelho"; // Default
+        }
+
+        List<Estoque> estoques = estoqueRepository.findEstoquesComQuantidadeDiferenteZeroPorTenant(tenantId);
+        return estoques.stream().map(this::convertToDTO).collect(Collectors.toList());
+    }
+
+    /**
+     * Busca estoque por poste do tenant atual
+     */
+    public Optional<EstoqueDTO> buscarEstoquePorPostePorTenant(Long posteId) {
+        log.debug("Buscando estoque para poste ID: {} por tenant: {}", posteId, TenantContext.getCurrentTenantValue());
+
+        String tenantId = TenantContext.getCurrentTenantValue();
+        if (tenantId == null) {
+            tenantId = "vermelho"; // Default
+        }
+
+        // Primeiro, verificar se o poste pertence ao tenant atual
+        Optional<Poste> posteOpt = posteRepository.findById(posteId);
+        if (posteOpt.isEmpty()) {
+            log.warn("Poste não encontrado com ID: {}", posteId);
+            return Optional.empty();
+        }
+
+        Poste poste = posteOpt.get();
+        if (!tenantId.equals(poste.getTenantId())) {
+            log.warn("Tentativa de acesso a poste de outro tenant. Poste ID: {}, Tenant atual: {}, Tenant do poste: {}",
+                    posteId, tenantId, poste.getTenantId());
+            return Optional.empty();
+        }
+
+        if (!poste.getAtivo()) {
+            log.warn("Poste inativo: {}", posteId);
+            return Optional.empty();
+        }
+
+        Optional<Estoque> estoqueOpt = estoqueRepository.findByPosteId(posteId);
+        if (estoqueOpt.isPresent()) {
+            return Optional.of(convertToDTO(estoqueOpt.get()));
+        }
+
+        // Se não existe estoque, criar entrada zerada
+        return Optional.of(criarEstoqueDTOZerado(poste));
+    }
+
+    /**
+     * Lista estoques abaixo do mínimo do tenant atual
+     */
+    public List<EstoqueDTO> listarEstoquesAbaixoMinimoPorTenant() {
+        log.debug("Listando estoques abaixo do mínimo por tenant: {}", TenantContext.getCurrentTenantValue());
+
+        String tenantId = TenantContext.getCurrentTenantValue();
+        if (tenantId == null) {
+            tenantId = "vermelho"; // Default
+        }
+
+        List<Estoque> estoques = estoqueRepository.findEstoquesAbaixoMinimoPorTenant(tenantId);
+        return estoques.stream().map(this::convertToDTO).collect(Collectors.toList());
+    }
+
+    // ===== MÉTODOS ORIGINAIS MANTIDOS PARA COMPATIBILIDADE =====
 
     public List<EstoqueDTO> listarTodoEstoque() {
         log.debug("Listando todo o estoque");
@@ -69,6 +169,8 @@ public class EstoqueService {
         return Optional.empty();
     }
 
+    // ===== OPERAÇÕES DE MODIFICAÇÃO =====
+
     @Transactional
     public EstoqueDTO adicionarEstoque(Long posteId, Integer quantidade, String observacao) {
         log.debug("Adicionando {} unidades ao estoque do poste ID: {}", quantidade, posteId);
@@ -79,6 +181,12 @@ public class EstoqueService {
 
         Poste poste = posteRepository.findById(posteId)
                 .orElseThrow(() -> new IllegalArgumentException("Poste não encontrado com ID: " + posteId));
+
+        // Verificar se o poste pertence ao tenant atual
+        String tenantAtual = TenantContext.getCurrentTenantValue();
+        if (tenantAtual != null && !tenantAtual.equals(poste.getTenantId())) {
+            throw new IllegalArgumentException("Poste não pertence ao tenant atual");
+        }
 
         if (!poste.getAtivo()) {
             throw new IllegalArgumentException("Não é possível adicionar estoque para poste inativo");
@@ -92,10 +200,13 @@ public class EstoqueService {
             estoque.adicionarQuantidade(quantidade);
         } else {
             estoque = new Estoque(poste, quantidade);
+            // Garantir que o estoque tenha o mesmo tenant do poste
+            estoque.setTenantId(poste.getTenantId());
         }
 
         estoque = estoqueRepository.save(estoque);
-        log.info("Estoque atualizado. Poste: {}, Nova quantidade: {}", poste.getCodigo(), estoque.getQuantidadeAtual());
+        log.info("Estoque atualizado. Poste: {}, Nova quantidade: {}, Tenant: {}",
+                poste.getCodigo(), estoque.getQuantidadeAtual(), estoque.getTenantId());
 
         return convertToDTO(estoque);
     }
@@ -112,6 +223,13 @@ public class EstoqueService {
 
         if (estoqueOpt.isPresent()) {
             Estoque estoque = estoqueOpt.get();
+
+            // Verificar se o estoque pertence ao tenant atual
+            String tenantAtual = TenantContext.getCurrentTenantValue();
+            if (tenantAtual != null && !tenantAtual.equals(estoque.getTenantId())) {
+                throw new IllegalArgumentException("Estoque não pertence ao tenant atual");
+            }
+
             if (estoque.removerQuantidade(quantidade)) {
                 estoqueRepository.save(estoque);
                 log.info("Estoque reduzido. Poste: {}, Nova quantidade: {}",
@@ -143,6 +261,12 @@ public class EstoqueService {
         Poste poste = posteRepository.findById(posteId)
                 .orElseThrow(() -> new IllegalArgumentException("Poste não encontrado com ID: " + posteId));
 
+        // Verificar se o poste pertence ao tenant atual
+        String tenantAtual = TenantContext.getCurrentTenantValue();
+        if (tenantAtual != null && !tenantAtual.equals(poste.getTenantId())) {
+            throw new IllegalArgumentException("Poste não pertence ao tenant atual");
+        }
+
         Optional<Estoque> estoqueOpt = estoqueRepository.findByPoste(poste);
 
         Estoque estoque;
@@ -151,6 +275,7 @@ public class EstoqueService {
         } else {
             // Criar entrada de estoque zerada se não existir
             estoque = new Estoque(poste, 0);
+            estoque.setTenantId(poste.getTenantId());
         }
 
         // Reduzir quantidade SEM validação (pode ficar negativo)
@@ -160,11 +285,11 @@ public class EstoqueService {
         estoqueRepository.save(estoque);
 
         if (estoque.getQuantidadeAtual() < 0) {
-            log.warn("⚠️ ESTOQUE NEGATIVO! Poste: {}, Quantidade atual: {}",
-                    poste.getCodigo(), estoque.getQuantidadeAtual());
+            log.warn("⚠️ ESTOQUE NEGATIVO! Poste: {}, Quantidade atual: {}, Tenant: {}",
+                    poste.getCodigo(), estoque.getQuantidadeAtual(), estoque.getTenantId());
         } else {
-            log.info("Estoque reduzido com sucesso. Poste: {}, Nova quantidade: {}",
-                    poste.getCodigo(), estoque.getQuantidadeAtual());
+            log.info("Estoque reduzido com sucesso. Poste: {}, Nova quantidade: {}, Tenant: {}",
+                    poste.getCodigo(), estoque.getQuantidadeAtual(), estoque.getTenantId());
         }
     }
 
@@ -185,6 +310,12 @@ public class EstoqueService {
         Poste poste = posteRepository.findById(posteId)
                 .orElseThrow(() -> new IllegalArgumentException("Poste não encontrado com ID: " + posteId));
 
+        // Verificar se o poste pertence ao tenant atual
+        String tenantAtual = TenantContext.getCurrentTenantValue();
+        if (tenantAtual != null && !tenantAtual.equals(poste.getTenantId())) {
+            throw new IllegalArgumentException("Poste não pertence ao tenant atual");
+        }
+
         Optional<Estoque> estoqueOpt = estoqueRepository.findByPoste(poste);
 
         Estoque estoque;
@@ -194,14 +325,17 @@ public class EstoqueService {
         } else {
             estoque = new Estoque(poste, 0);
             estoque.setQuantidadeMinima(quantidadeMinima);
+            estoque.setTenantId(poste.getTenantId());
         }
 
         estoque = estoqueRepository.save(estoque);
-        log.info("Quantidade mínima atualizada. Poste: {}, Quantidade mínima: {}",
-                poste.getCodigo(), quantidadeMinima);
+        log.info("Quantidade mínima atualizada. Poste: {}, Quantidade mínima: {}, Tenant: {}",
+                poste.getCodigo(), quantidadeMinima, estoque.getTenantId());
 
         return convertToDTO(estoque);
     }
+
+    // ===== MÉTODOS UTILITÁRIOS =====
 
     private EstoqueDTO convertToDTO(Estoque estoque) {
         EstoqueDTO dto = new EstoqueDTO();
