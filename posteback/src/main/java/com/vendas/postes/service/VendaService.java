@@ -18,10 +18,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
-/**
- * Service para gerenciamento de vendas COM separação por tenant
- * Cada caminhão tem suas próprias vendas
- */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -31,488 +27,137 @@ public class VendaService {
     private final PosteRepository posteRepository;
     private final EstoqueService estoqueService;
 
-    // ===== OPERAÇÕES DE CONSULTA =====
-
-    /**
-     * Lista todas as vendas do tenant atual ordenadas por data (mais recentes primeiro)
-     */
     public List<VendaDTO> listarTodasVendas() {
-        log.debug("Listando todas as vendas do tenant: {}", TenantContext.getCurrentTenantValue());
-
         String tenantId = TenantContext.getCurrentTenantValue();
-        if (tenantId == null) {
-            tenantId = "vermelho"; // Default
-        }
-
         List<Venda> vendas = vendaRepository.findByTenantIdOrderByDataVendaDesc(tenantId);
-        return convertToDTO(vendas);
+        return vendas.stream().map(this::convertToDTO).collect(Collectors.toList());
     }
 
-    /**
-     * Lista vendas em um período específico do tenant atual
-     */
     public List<VendaDTO> listarVendasPorPeriodo(LocalDate dataInicio, LocalDate dataFim) {
-        log.debug("Listando vendas por período: {} a {} - Tenant: {}",
-                dataInicio, dataFim, TenantContext.getCurrentTenantValue());
-
-        LocalDateTime inicio = determinarDataInicio(dataInicio);
-        LocalDateTime fim = determinarDataFim(dataFim);
-
         String tenantId = TenantContext.getCurrentTenantValue();
-        if (tenantId == null) {
-            tenantId = "vermelho"; // Default
-        }
+        LocalDateTime inicio = dataInicio != null ? dataInicio.atStartOfDay() : LocalDateTime.of(1900, 1, 1, 0, 0);
+        LocalDateTime fim = dataFim != null ? dataFim.atTime(23, 59, 59) : LocalDateTime.now();
 
-        List<Venda> vendas = vendaRepository.findByTenantIdAndDataVendaBetweenOrderByDataVendaDesc(
-                tenantId, inicio, fim);
-
-        return convertToDTO(vendas);
+        List<Venda> vendas = vendaRepository.findByTenantIdAndDataVendaBetween(tenantId, inicio, fim);
+        return vendas.stream().map(this::convertToDTO).collect(Collectors.toList());
     }
 
-    /**
-     * Busca uma venda específica por ID (verificando se pertence ao tenant atual)
-     */
     public Optional<VendaDTO> buscarVendaPorId(Long id) {
-        log.debug("Buscando venda por ID: {} - Tenant: {}", id, TenantContext.getCurrentTenantValue());
-
-        validarId(id);
-
         Optional<Venda> vendaOpt = vendaRepository.findById(id);
         if (vendaOpt.isPresent()) {
             Venda venda = vendaOpt.get();
-
-            // Verificar se a venda pertence ao tenant atual
             String tenantAtual = TenantContext.getCurrentTenantValue();
-            if (tenantAtual != null && !tenantAtual.equals(venda.getTenantId())) {
-                log.warn("Tentativa de acesso a venda de outro tenant. Venda: {}, Tenant atual: {}, Tenant da venda: {}",
-                        id, tenantAtual, venda.getTenantId());
+            if (!tenantAtual.equals(venda.getTenantId())) {
                 return Optional.empty();
             }
-
             return Optional.of(convertToDTO(venda));
         }
-
         return Optional.empty();
     }
 
-    // ===== OPERAÇÕES DE RESUMO =====
-
-    /**
-     * Obtém resumo de todas as vendas do tenant atual
-     */
-    public ResumoVendasDTO obterResumoVendas() {
-        log.debug("Calculando resumo de todas as vendas - Tenant: {}", TenantContext.getCurrentTenantValue());
-
-        String tenantId = TenantContext.getCurrentTenantValue();
-        if (tenantId == null) {
-            tenantId = "vermelho"; // Default
-        }
-
-        List<Venda> vendas = vendaRepository.findByTenantId(tenantId);
-        return calcularResumoVendas(vendas);
-    }
-
-    /**
-     * Obtém resumo de vendas por período do tenant atual
-     */
-    public ResumoVendasDTO obterResumoVendasPorPeriodo(LocalDate dataInicio, LocalDate dataFim) {
-        log.debug("Calculando resumo de vendas por período: {} a {} - Tenant: {}",
-                dataInicio, dataFim, TenantContext.getCurrentTenantValue());
-
-        LocalDateTime inicio = determinarDataInicio(dataInicio);
-        LocalDateTime fim = determinarDataFim(dataFim);
-
-        String tenantId = TenantContext.getCurrentTenantValue();
-        if (tenantId == null) {
-            tenantId = "vermelho"; // Default
-        }
-
-        List<Venda> vendas = vendaRepository.findByTenantIdAndDataVendaBetween(tenantId, inicio, fim);
-        return calcularResumoVendas(vendas);
-    }
-
-    // ===== OPERAÇÕES DE MODIFICAÇÃO =====
-
-    /**
-     * Cria uma nova venda para o tenant atual
-     */
     @Transactional
     public VendaDTO criarVenda(VendaCreateDTO vendaCreateDTO) {
         String tenantId = TenantContext.getCurrentTenantValue();
-        if (tenantId == null) {
-            tenantId = "vermelho"; // Default
-        }
 
-        log.info("Iniciando criação de venda tipo: {} - Tenant: {}",
-                vendaCreateDTO.getTipoVenda(), tenantId);
-
-        try {
-            // 1. Validações básicas
-            validarDadosVenda(vendaCreateDTO);
-
-            // 2. Validação específica por tipo
-            validarDadosPorTipo(vendaCreateDTO);
-
-            // 3. Construir venda com tenant
-            Venda venda = construirVenda(vendaCreateDTO);
-            venda.setTenantId(tenantId);
-
-            // 4. Salvar venda
-            venda = vendaRepository.save(venda);
-
-            // 5. Atualizar estoque (pode ficar negativo)
-            atualizarEstoqueSemValidacao(venda);
-
-            // 6. Log de sucesso
-            log.info("Venda criada com sucesso. ID: {}, Tipo: {}, Tenant: {}",
-                    venda.getId(), venda.getTipoVenda(), tenantId);
-
-            return convertToDTO(venda);
-
-        } catch (Exception e) {
-            log.error("Erro ao criar venda para tenant {}: {}", tenantId, e.getMessage(), e);
-            throw e;
-        }
-    }
-
-    /**
-     * Atualiza uma venda existente (verificando se pertence ao tenant atual)
-     */
-    @Transactional
-    public VendaDTO atualizarVenda(Long id, VendaDTO vendaDTO) {
-        String tenantId = TenantContext.getCurrentTenantValue();
-        log.info("Iniciando atualização da venda ID: {} - Tenant: {}", id, tenantId);
-
-        try {
-            validarId(id);
-            validarDadosEdicao(vendaDTO);
-
-            Venda venda = buscarVendaOuLancarExcecao(id);
-
-            // Verificar se a venda pertence ao tenant atual
-            if (tenantId != null && !tenantId.equals(venda.getTenantId())) {
-                throw new SecurityException("Não é possível editar venda de outro caminhão");
-            }
-
-            // Atualizar apenas campos editáveis (sem mexer no estoque)
-            atualizarCamposEditaveis(venda, vendaDTO);
-
-            venda = vendaRepository.save(venda);
-
-            log.info("Venda atualizada com sucesso. ID: {} - Tenant: {}", id, tenantId);
-            return convertToDTO(venda);
-
-        } catch (Exception e) {
-            log.error("Erro ao atualizar venda ID {} para tenant {}: {}", id, tenantId, e.getMessage(), e);
-            throw e;
-        }
-    }
-
-    /**
-     * Deleta uma venda e reverte o estoque automaticamente (verificando tenant)
-     */
-    @Transactional
-    public void deletarVenda(Long id) {
-        String tenantId = TenantContext.getCurrentTenantValue();
-        log.info("Iniciando exclusão da venda ID: {} - Tenant: {}", id, tenantId);
-
-        try {
-            validarId(id);
-            Venda venda = buscarVendaOuLancarExcecao(id);
-
-            // Verificar se a venda pertence ao tenant atual
-            if (tenantId != null && !tenantId.equals(venda.getTenantId())) {
-                throw new SecurityException("Não é possível excluir venda de outro caminhão");
-            }
-
-            // Reverter estoque antes de deletar
-            reverterEstoqueSeNecessario(venda);
-
-            // Deletar venda
-            vendaRepository.delete(venda);
-
-            log.info("Venda deletada com sucesso. ID: {}, Estoque revertido automaticamente - Tenant: {}",
-                    id, tenantId);
-
-        } catch (Exception e) {
-            log.error("Erro ao deletar venda ID {} para tenant {}: {}", id, tenantId, e.getMessage(), e);
-            throw new RuntimeException("Erro ao deletar venda: " + e.getMessage(), e);
-        }
-    }
-
-    // ===== VALIDAÇÕES =====
-
-    private void validarDadosVenda(VendaCreateDTO vendaDTO) {
-        if (vendaDTO == null) {
-            throw new IllegalArgumentException("Dados da venda não podem ser nulos");
-        }
-
-        if (vendaDTO.getDataVenda() == null) {
-            throw new IllegalArgumentException("Data da venda é obrigatória");
-        }
-
-        if (vendaDTO.getTipoVenda() == null) {
-            throw new IllegalArgumentException("Tipo da venda é obrigatório");
-        }
-    }
-
-    private void validarDadosPorTipo(VendaCreateDTO vendaDTO) {
-        switch (vendaDTO.getTipoVenda()) {
-            case E:
-                validarVendaExtra(vendaDTO);
-                break;
-            case V:
-                validarVendaNormal(vendaDTO);
-                break;
-            case L:
-                validarVendaLoja(vendaDTO);
-                break;
-            default:
-                throw new IllegalArgumentException("Tipo de venda inválido: " + vendaDTO.getTipoVenda());
-        }
-    }
-
-    private void validarVendaExtra(VendaCreateDTO vendaDTO) {
-        if (vendaDTO.getValorExtra() == null || vendaDTO.getValorExtra().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("Valor extra deve ser maior que zero para vendas tipo E");
-        }
-    }
-
-    private void validarVendaNormal(VendaCreateDTO vendaDTO) {
-        if (vendaDTO.getPosteId() == null) {
-            throw new IllegalArgumentException("Poste é obrigatório para vendas tipo V");
-        }
-
-        if (vendaDTO.getValorVenda() == null || vendaDTO.getValorVenda().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("Valor de venda deve ser maior que zero para vendas tipo V");
-        }
-
-        if (vendaDTO.getQuantidade() == null || vendaDTO.getQuantidade() <= 0) {
-            throw new IllegalArgumentException("Quantidade deve ser maior que zero para vendas tipo V");
-        }
-    }
-
-    private void validarVendaLoja(VendaCreateDTO vendaDTO) {
-        if (vendaDTO.getPosteId() == null) {
-            throw new IllegalArgumentException("Poste de referência é obrigatório para vendas tipo L");
-        }
-
-        if (vendaDTO.getQuantidade() == null || vendaDTO.getQuantidade() <= 0) {
-            throw new IllegalArgumentException("Quantidade deve ser maior que zero para vendas tipo L");
-        }
-    }
-
-    private void validarDadosEdicao(VendaDTO vendaDTO) {
-        if (vendaDTO == null) {
-            throw new IllegalArgumentException("Dados da venda não podem ser nulos");
-        }
-    }
-
-    private void validarId(Long id) {
-        if (id == null || id <= 0) {
-            throw new IllegalArgumentException("ID da venda deve ser um número positivo");
-        }
-    }
-
-    // ===== OPERAÇÕES DE ESTOQUE =====
-
-    private void atualizarEstoqueSemValidacao(Venda venda) {
-        if (!precisaAtualizarEstoque(venda)) {
-            return;
-        }
-
-        Long posteId = venda.getPoste().getId();
-        Integer quantidade = venda.getQuantidade() != null ? venda.getQuantidade() : 1;
-
-        log.debug("Reduzindo estoque SEM validação. Poste ID: {}, Quantidade: {}", posteId, quantidade);
-
-        try {
-            // Força a redução do estoque, mesmo que fique negativo
-            estoqueService.reduzirEstoqueForcado(posteId, quantidade);
-
-            log.info("Estoque reduzido (pode estar negativo). Venda ID: {}, Poste: {}, Quantidade: {}",
-                    venda.getId(), venda.getPoste().getCodigo(), quantidade);
-
-        } catch (Exception e) {
-            log.error("Erro ao reduzir estoque para venda ID {}: {}", venda.getId(), e.getMessage());
-            // Não falha a venda por erro no estoque
-        }
-    }
-
-    private void reverterEstoqueSeNecessario(Venda venda) {
-        if (!precisaAtualizarEstoque(venda)) {
-            return;
-        }
-
-        Long posteId = venda.getPoste().getId();
-        Integer quantidade = venda.getQuantidade() != null ? venda.getQuantidade() : 1;
-
-        log.debug("Revertendo estoque. Poste ID: {}, Quantidade: {}", posteId, quantidade);
-
-        try {
-            estoqueService.adicionarEstoque(
-                    posteId,
-                    quantidade,
-                    "Devolução por exclusão de venda ID: " + venda.getId()
-            );
-
-            log.info("Estoque revertido com sucesso. Venda ID: {}, Poste: {}, Quantidade: {}",
-                    venda.getId(), venda.getPoste().getCodigo(), quantidade);
-
-        } catch (Exception e) {
-            log.error("Erro ao reverter estoque para venda ID {}: {}", venda.getId(), e.getMessage());
-            // Não falha a exclusão da venda por erro na reversão do estoque
-        }
-    }
-
-    private boolean precisaAtualizarEstoque(Venda venda) {
-        return (venda.getTipoVenda() == Venda.TipoVenda.V ||
-                venda.getTipoVenda() == Venda.TipoVenda.L) &&
-                venda.getPoste() != null;
-    }
-
-    // ===== CONSTRUÇÃO DE OBJETOS =====
-
-    private Venda construirVenda(VendaCreateDTO vendaDTO) {
         Venda venda = new Venda();
-        venda.setDataVenda(vendaDTO.getDataVenda());
-        venda.setTipoVenda(vendaDTO.getTipoVenda());
-        venda.setObservacoes(vendaDTO.getObservacoes());
+        venda.setDataVenda(vendaCreateDTO.getDataVenda());
+        venda.setTipoVenda(vendaCreateDTO.getTipoVenda());
+        venda.setQuantidade(vendaCreateDTO.getQuantidade());
+        venda.setFreteEletrons(vendaCreateDTO.getFreteEletrons());
+        venda.setValorVenda(vendaCreateDTO.getValorVenda());
+        venda.setValorExtra(vendaCreateDTO.getValorExtra());
+        venda.setObservacoes(vendaCreateDTO.getObservacoes());
+        venda.setTenantId(tenantId);
 
-        // Configurar poste se necessário
-        if (vendaDTO.getPosteId() != null) {
-            Poste poste = buscarPosteOuLancarExcecao(vendaDTO.getPosteId());
-            validarPosteAtivo(poste);
-            validarPostePertenceAoTenant(poste);
+        if (vendaCreateDTO.getPosteId() != null) {
+            Poste poste = posteRepository.findById(vendaCreateDTO.getPosteId())
+                    .orElseThrow(() -> new RuntimeException("Poste não encontrado"));
             venda.setPoste(poste);
         }
 
-        // Configurar campos específicos por tipo
-        configurarCamposPorTipo(venda, vendaDTO);
+        venda = vendaRepository.save(venda);
 
-        return venda;
-    }
-
-    private void configurarCamposPorTipo(Venda venda, VendaCreateDTO vendaDTO) {
-        venda.setQuantidade(vendaDTO.getQuantidade());
-        venda.setFreteEletrons(vendaDTO.getFreteEletrons());
-        venda.setValorVenda(vendaDTO.getValorVenda());
-        venda.setValorExtra(vendaDTO.getValorExtra());
-    }
-
-    private void atualizarCamposEditaveis(Venda venda, VendaDTO vendaDTO) {
-        // Apenas campos que podem ser editados sem afetar estoque
-        venda.setFreteEletrons(vendaDTO.getFreteEletrons());
-        venda.setValorVenda(vendaDTO.getValorVenda());
-        venda.setValorExtra(vendaDTO.getValorExtra());
-        venda.setObservacoes(vendaDTO.getObservacoes());
-    }
-
-    // ===== BUSCA E VALIDAÇÃO DE ENTIDADES =====
-
-    private Venda buscarVendaOuLancarExcecao(Long id) {
-        return vendaRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Venda não encontrada com ID: " + id));
-    }
-
-    private Poste buscarPosteOuLancarExcecao(Long posteId) {
-        return posteRepository.findById(posteId)
-                .orElseThrow(() -> new IllegalArgumentException("Poste não encontrado com ID: " + posteId));
-    }
-
-    private void validarPosteAtivo(Poste poste) {
-        if (!poste.getAtivo()) {
-            throw new IllegalArgumentException("Poste inativo não pode ser usado em vendas");
-        }
-    }
-
-    private void validarPostePertenceAoTenant(Poste poste) {
-        String tenantAtual = TenantContext.getCurrentTenantValue();
-        if (tenantAtual != null && !tenantAtual.equals(poste.getTenantId())) {
-            throw new IllegalArgumentException("Poste não pertence ao caminhão atual");
-        }
-    }
-
-    // ===== CÁLCULOS DE RESUMO =====
-
-    private ResumoVendasDTO calcularResumoVendas(List<Venda> vendas) {
-        log.debug("Calculando resumo para {} vendas", vendas.size());
-
-        // Separar vendas por tipo
-        List<Venda> vendasE = filtrarPorTipo(vendas, Venda.TipoVenda.E);
-        List<Venda> vendasV = filtrarPorTipo(vendas, Venda.TipoVenda.V);
-        List<Venda> vendasL = filtrarPorTipo(vendas, Venda.TipoVenda.L);
-
-        // Calcular totais
-        BigDecimal totalVendaPostes = calcularCustoPostes(vendasV);
-        BigDecimal valorTotalVendas = calcularValorVendas(vendasV);
-        BigDecimal totalFreteEletrons = calcularFreteEletrons(vendasL);
-        BigDecimal valorTotalExtras = calcularValorExtras(vendasE);
-        BigDecimal totalContribuicoesExtras = valorTotalExtras.add(totalFreteEletrons);
-
-        return new ResumoVendasDTO(
-                totalVendaPostes,
-                valorTotalVendas,
-                totalFreteEletrons,
-                valorTotalExtras,
-                (long) vendasE.size(),
-                (long) vendasV.size(),
-                (long) vendasL.size(),
-                BigDecimal.ZERO, // despesasFuncionario - calculado no frontend
-                BigDecimal.ZERO, // outrasDespesas - calculado no frontend
-                totalContribuicoesExtras
-        );
-    }
-
-    private List<Venda> filtrarPorTipo(List<Venda> vendas, Venda.TipoVenda tipo) {
-        return vendas.stream()
-                .filter(v -> v.getTipoVenda() == tipo)
-                .collect(Collectors.toList());
-    }
-
-    private BigDecimal calcularCustoPostes(List<Venda> vendasV) {
-        return vendasV.stream()
-                .map(this::calcularCustoPosteVenda)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-    }
-
-    private BigDecimal calcularCustoPosteVenda(Venda venda) {
+        // Atualizar estoque se necessário
         if (venda.getPoste() != null && venda.getQuantidade() != null) {
-            return venda.getPoste().getPreco().multiply(BigDecimal.valueOf(venda.getQuantidade()));
+            estoqueService.reduzirEstoque(venda.getPoste().getId(), venda.getQuantidade());
         }
-        return BigDecimal.ZERO;
+
+        return convertToDTO(venda);
     }
 
-    private BigDecimal calcularValorVendas(List<Venda> vendasV) {
-        return vendasV.stream()
-                .map(v -> v.getValorVenda() != null ? v.getValorVenda() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    @Transactional
+    public void deletarVenda(Long id) {
+        Venda venda = vendaRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Venda não encontrada"));
+
+        String tenantAtual = TenantContext.getCurrentTenantValue();
+        if (!tenantAtual.equals(venda.getTenantId())) {
+            throw new RuntimeException("Não é possível excluir venda de outro caminhão");
+        }
+
+        // Reverter estoque
+        if (venda.getPoste() != null && venda.getQuantidade() != null) {
+            estoqueService.adicionarEstoque(venda.getPoste().getId(), venda.getQuantidade());
+        }
+
+        vendaRepository.delete(venda);
     }
 
-    private BigDecimal calcularFreteEletrons(List<Venda> vendasL) {
-        return vendasL.stream()
-                .map(v -> v.getFreteEletrons() != null ? v.getFreteEletrons() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    public ResumoVendasDTO obterResumoVendas() {
+        String tenantId = TenantContext.getCurrentTenantValue();
+        List<Venda> vendas = vendaRepository.findByTenantId(tenantId);
+        return calcularResumo(vendas);
     }
 
-    private BigDecimal calcularValorExtras(List<Venda> vendasE) {
-        return vendasE.stream()
-                .map(v -> v.getValorExtra() != null ? v.getValorExtra() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    public ResumoVendasDTO obterResumoVendasPorPeriodo(LocalDate dataInicio, LocalDate dataFim) {
+        String tenantId = TenantContext.getCurrentTenantValue();
+        LocalDateTime inicio = dataInicio != null ? dataInicio.atStartOfDay() : LocalDateTime.of(1900, 1, 1, 0, 0);
+        LocalDateTime fim = dataFim != null ? dataFim.atTime(23, 59, 59) : LocalDateTime.now();
+
+        List<Venda> vendas = vendaRepository.findByTenantIdAndDataVendaBetween(tenantId, inicio, fim);
+        return calcularResumo(vendas);
     }
 
-    // ===== CONVERSÕES DTO =====
+    private ResumoVendasDTO calcularResumo(List<Venda> vendas) {
+        BigDecimal totalVendaPostes = BigDecimal.ZERO;
+        BigDecimal valorTotalVendas = BigDecimal.ZERO;
+        BigDecimal totalFreteEletrons = BigDecimal.ZERO;
+        BigDecimal valorTotalExtras = BigDecimal.ZERO;
+        long totalE = 0, totalV = 0, totalL = 0;
 
-    private List<VendaDTO> convertToDTO(List<Venda> vendas) {
-        return vendas.stream()
-                .map(this::convertToDTO)
-                .collect(Collectors.toList());
+        for (Venda venda : vendas) {
+            switch (venda.getTipoVenda()) {
+                case E:
+                    totalE++;
+                    if (venda.getValorExtra() != null) {
+                        valorTotalExtras = valorTotalExtras.add(venda.getValorExtra());
+                    }
+                    break;
+                case V:
+                    totalV++;
+                    if (venda.getValorVenda() != null) {
+                        valorTotalVendas = valorTotalVendas.add(venda.getValorVenda());
+                    }
+                    if (venda.getPoste() != null && venda.getQuantidade() != null) {
+                        BigDecimal custo = venda.getPoste().getPreco().multiply(BigDecimal.valueOf(venda.getQuantidade()));
+                        totalVendaPostes = totalVendaPostes.add(custo);
+                    }
+                    break;
+                case L:
+                    totalL++;
+                    if (venda.getFreteEletrons() != null) {
+                        totalFreteEletrons = totalFreteEletrons.add(venda.getFreteEletrons());
+                    }
+                    break;
+            }
+        }
+
+        return new ResumoVendasDTO(totalVendaPostes, valorTotalVendas, totalFreteEletrons,
+                valorTotalExtras, totalE, totalV, totalL);
     }
 
     private VendaDTO convertToDTO(Venda venda) {
         VendaDTO dto = new VendaDTO();
-
-        // Campos básicos
         dto.setId(venda.getId());
         dto.setDataVenda(venda.getDataVenda());
         dto.setTipoVenda(venda.getTipoVenda());
@@ -522,7 +167,6 @@ public class VendaService {
         dto.setValorExtra(venda.getValorExtra());
         dto.setObservacoes(venda.getObservacoes());
 
-        // Informações do poste (se existir)
         if (venda.getPoste() != null) {
             dto.setPosteId(venda.getPoste().getId());
             dto.setCodigoPoste(venda.getPoste().getCodigo());
@@ -530,19 +174,5 @@ public class VendaService {
         }
 
         return dto;
-    }
-
-    // ===== UTILITÁRIOS =====
-
-    private LocalDateTime determinarDataInicio(LocalDate dataInicio) {
-        return dataInicio != null ?
-                dataInicio.atStartOfDay() :
-                LocalDateTime.of(1900, 1, 1, 0, 0);
-    }
-
-    private LocalDateTime determinarDataFim(LocalDate dataFim) {
-        return dataFim != null ?
-                dataFim.atTime(23, 59, 59) :
-                LocalDateTime.now();
     }
 }

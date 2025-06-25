@@ -1,9 +1,5 @@
 package com.vendas.postes.config;
 
-/**
- * Contexto para armazenar informações do tenant (caminhão) atual
- * Usado para separar dados entre Caminhão Vermelho e Caminhão Branco
- */
 public class TenantContext {
 
     public enum TenantType {
@@ -21,14 +17,8 @@ public class TenantContext {
         }
 
         public static TenantType fromValue(String value) {
-            if (value == null) return null;
-
-            for (TenantType type : TenantType.values()) {
-                if (type.getValue().equalsIgnoreCase(value)) {
-                    return type;
-                }
-            }
-            return null;
+            if (value == null) return VERMELHO;
+            return "branco".equalsIgnoreCase(value) ? BRANCO : VERMELHO;
         }
     }
 
@@ -39,23 +29,15 @@ public class TenantContext {
     }
 
     public static TenantType getCurrentTenant() {
-        return currentTenant.get();
+        TenantType tenant = currentTenant.get();
+        return tenant != null ? tenant : TenantType.VERMELHO;
     }
 
     public static String getCurrentTenantValue() {
-        TenantType tenant = getCurrentTenant();
-        return tenant != null ? tenant.getValue() : null;
+        return getCurrentTenant().getValue();
     }
 
     public static void clear() {
         currentTenant.remove();
-    }
-
-    public static boolean isVermelho() {
-        return TenantType.VERMELHO.equals(getCurrentTenant());
-    }
-
-    public static boolean isBranco() {
-        return TenantType.BRANCO.equals(getCurrentTenant());
     }
 }

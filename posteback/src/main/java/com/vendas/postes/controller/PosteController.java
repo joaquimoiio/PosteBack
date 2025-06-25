@@ -12,8 +12,8 @@ import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/postes")
-@RequiredArgsConstructor
 @CrossOrigin(origins = "*")
+@RequiredArgsConstructor
 public class PosteController {
 
     private final PosteRepository posteRepository;
@@ -21,53 +21,33 @@ public class PosteController {
     @GetMapping
     public List<Poste> listarTodos() {
         String tenantId = TenantContext.getCurrentTenantValue();
-        if (tenantId != null) {
-            return posteRepository.findByTenantId(tenantId);
-        }
-        return posteRepository.findAll();
+        return posteRepository.findByTenantId(tenantId);
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<Poste> buscarPorId(@PathVariable Long id) {
         Optional<Poste> poste = posteRepository.findById(id);
-
-        if (poste.isPresent()) {
-            // Verificar se o poste pertence ao tenant atual
-            String tenantAtual = TenantContext.getCurrentTenantValue();
-            if (tenantAtual != null && !tenantAtual.equals(poste.get().getTenantId())) {
-                return ResponseEntity.notFound().build();
-            }
+        if (poste.isPresent() && poste.get().getTenantId().equals(TenantContext.getCurrentTenantValue())) {
             return ResponseEntity.ok(poste.get());
         }
-
         return ResponseEntity.notFound().build();
     }
 
     @PostMapping
     public Poste criar(@RequestBody Poste poste) {
-        // Definir tenant atual
-        String tenantId = TenantContext.getCurrentTenantValue();
-        if (tenantId != null) {
-            poste.setTenantId(tenantId);
-        }
+        poste.setTenantId(TenantContext.getCurrentTenantValue());
         return posteRepository.save(poste);
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<Poste> atualizar(@PathVariable Long id, @RequestBody Poste posteAtualizado) {
         return posteRepository.findById(id)
+                .filter(poste -> poste.getTenantId().equals(TenantContext.getCurrentTenantValue()))
                 .map(poste -> {
-                    // Verificar se o poste pertence ao tenant atual
-                    String tenantAtual = TenantContext.getCurrentTenantValue();
-                    if (tenantAtual != null && !tenantAtual.equals(poste.getTenantId())) {
-                        return ResponseEntity.notFound().<Poste>build();
-                    }
-
                     poste.setCodigo(posteAtualizado.getCodigo());
                     poste.setDescricao(posteAtualizado.getDescricao());
                     poste.setPreco(posteAtualizado.getPreco());
                     poste.setAtivo(posteAtualizado.getAtivo());
-                    // Manter o tenant ID original
                     return ResponseEntity.ok(posteRepository.save(poste));
                 })
                 .orElse(ResponseEntity.notFound().build());
@@ -76,13 +56,8 @@ public class PosteController {
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deletar(@PathVariable Long id) {
         return posteRepository.findById(id)
+                .filter(poste -> poste.getTenantId().equals(TenantContext.getCurrentTenantValue()))
                 .map(poste -> {
-                    // Verificar se o poste pertence ao tenant atual
-                    String tenantAtual = TenantContext.getCurrentTenantValue();
-                    if (tenantAtual != null && !tenantAtual.equals(poste.getTenantId())) {
-                        return ResponseEntity.notFound().build();
-                    }
-
                     poste.setAtivo(false);
                     posteRepository.save(poste);
                     return ResponseEntity.ok().build();

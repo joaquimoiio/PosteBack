@@ -16,7 +16,7 @@ import java.util.List;
  */
 @Component
 @RequiredArgsConstructor
-public class TenantDataLoader implements CommandLineRunner {
+public class DataLoader implements CommandLineRunner {
 
     private final PosteRepository posteRepository;
 
