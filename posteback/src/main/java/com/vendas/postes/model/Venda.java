@@ -50,6 +50,13 @@ public class Venda {
     @Column(name = "observacoes", length = 1000)
     private String observacoes;
 
+    /**
+     * Campo para identificar a qual caminhão a venda pertence
+     * Valores possíveis: "vermelho", "branco"
+     */
+    @Column(name = "tenant_id", nullable = false, length = 20)
+    private String tenantId = "vermelho"; // Default para compatibilidade
+
     public enum TipoVenda {
         E("Extra"),
         V("Venda Normal"),
@@ -64,5 +71,33 @@ public class Venda {
         public String getDescricao() {
             return descricao;
         }
+    }
+
+    /**
+     * Verifica se a venda pertence ao caminhão vermelho
+     */
+    public boolean isVermelho() {
+        return "vermelho".equalsIgnoreCase(tenantId);
+    }
+
+    /**
+     * Verifica se a venda pertence ao caminhão branco
+     */
+    public boolean isBranco() {
+        return "branco".equalsIgnoreCase(tenantId);
+    }
+
+    /**
+     * Define o tenant como caminhão vermelho
+     */
+    public void setAsVermelho() {
+        this.tenantId = "vermelho";
+    }
+
+    /**
+     * Define o tenant como caminhão branco
+     */
+    public void setAsBranco() {
+        this.tenantId = "branco";
     }
 }

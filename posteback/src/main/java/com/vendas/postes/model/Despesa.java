@@ -32,7 +32,42 @@ public class Despesa {
     @Column(name = "data_despesa", nullable = false)
     private LocalDate dataDespesa = LocalDate.now();
 
+    /**
+     * Campo para identificar a qual caminhão a despesa pertence
+     * Valores possíveis: "vermelho", "branco"
+     */
+    @Column(name = "tenant_id", nullable = false, length = 20)
+    private String tenantId = "vermelho"; // Default para compatibilidade
+
     public enum TipoDespesa {
         FUNCIONARIO, OUTRAS
+    }
+
+    /**
+     * Verifica se a despesa pertence ao caminhão vermelho
+     */
+    public boolean isVermelho() {
+        return "vermelho".equalsIgnoreCase(tenantId);
+    }
+
+    /**
+     * Verifica se a despesa pertence ao caminhão branco
+     */
+    public boolean isBranco() {
+        return "branco".equalsIgnoreCase(tenantId);
+    }
+
+    /**
+     * Define o tenant como caminhão vermelho
+     */
+    public void setAsVermelho() {
+        this.tenantId = "vermelho";
+    }
+
+    /**
+     * Define o tenant como caminhão branco
+     */
+    public void setAsBranco() {
+        this.tenantId = "branco";
     }
 }

@@ -9,4 +9,6 @@ import java.util.List;
 @Repository
 public interface PosteRepository extends JpaRepository<Poste, Long> {
     List<Poste> findByAtivoTrue();
+    List<Poste> findByTenantId(String tenantId);
+    List<Poste> findByTenantIdAndAtivoTrue(String tenantId);
 }

@@ -18,7 +18,7 @@ public class Poste {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false)
     private String codigo;
 
     @Column(nullable = false, length = 500)
@@ -29,4 +29,39 @@ public class Poste {
 
     @Column(name = "ativo", nullable = false)
     private Boolean ativo = true;
+
+    /**
+     * Campo para identificar a qual caminhão o poste pertence
+     * Valores possíveis: "vermelho", "branco"
+     */
+    @Column(name = "tenant_id", nullable = false, length = 20)
+    private String tenantId = "vermelho"; // Default para compatibilidade
+
+    /**
+     * Verifica se o poste pertence ao caminhão vermelho
+     */
+    public boolean isVermelho() {
+        return "vermelho".equalsIgnoreCase(tenantId);
+    }
+
+    /**
+     * Verifica se o poste pertence ao caminhão branco
+     */
+    public boolean isBranco() {
+        return "branco".equalsIgnoreCase(tenantId);
+    }
+
+    /**
+     * Define o tenant como caminhão vermelho
+     */
+    public void setAsVermelho() {
+        this.tenantId = "vermelho";
+    }
+
+    /**
+     * Define o tenant como caminhão branco
+     */
+    public void setAsBranco() {
+        this.tenantId = "branco";
+    }
 }

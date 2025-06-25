@@ -31,11 +31,22 @@ public class Estoque {
     @Column(name = "data_atualizacao", nullable = false)
     private LocalDateTime dataAtualizacao = LocalDateTime.now();
 
+    /**
+     * Campo para identificar a qual caminhão o estoque pertence
+     * Herda automaticamente do poste associado
+     */
+    @Column(name = "tenant_id", nullable = false, length = 20)
+    private String tenantId = "vermelho"; // Default para compatibilidade
+
     // Construtor para facilitar criação
     public Estoque(Poste poste, Integer quantidadeAtual) {
         this.poste = poste;
         this.quantidadeAtual = quantidadeAtual;
         this.dataAtualizacao = LocalDateTime.now();
+        // Herdar tenant do poste
+        if (poste != null && poste.getTenantId() != null) {
+            this.tenantId = poste.getTenantId();
+        }
     }
 
     public void adicionarQuantidade(Integer quantidade) {
@@ -60,5 +71,42 @@ public class Estoque {
 
     public boolean estoqueAbaixoDoMinimo() {
         return this.quantidadeAtual <= this.quantidadeMinima;
+    }
+
+    /**
+     * Verifica se o estoque pertence ao caminhão vermelho
+     */
+    public boolean isVermelho() {
+        return "vermelho".equalsIgnoreCase(tenantId);
+    }
+
+    /**
+     * Verifica se o estoque pertence ao caminhão branco
+     */
+    public boolean isBranco() {
+        return "branco".equalsIgnoreCase(tenantId);
+    }
+
+    /**
+     * Define o tenant como caminhão vermelho
+     */
+    public void setAsVermelho() {
+        this.tenantId = "vermelho";
+    }
+
+    /**
+     * Define o tenant como caminhão branco
+     */
+    public void setAsBranco() {
+        this.tenantId = "branco";
+    }
+
+    /**
+     * Sincroniza o tenant com o poste associado
+     */
+    public void syncTenantWithPoste() {
+        if (this.poste != null && this.poste.getTenantId() != null) {
+            this.tenantId = this.poste.getTenantId();
+        }
     }
 }

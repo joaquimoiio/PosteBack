@@ -1,5 +1,6 @@
 package com.vendas.postes.service;
 
+import com.vendas.postes.config.TenantContext;
 import com.vendas.postes.dto.*;
 import com.vendas.postes.model.Poste;
 import com.vendas.postes.model.Venda;
@@ -18,15 +19,8 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
- * Service para gerenciamento de vendas SEM validação de estoque.
- *
- * MODIFICAÇÕES IMPLEMENTADAS:
- * - Remoção da verificação de estoque suficiente
- * - Permitir estoque negativo
- * - Atualização automática do estoque após venda
- *
- * @author Sistema de Vendas de Postes
- * @version 2.1
+ * Service para gerenciamento de vendas COM separação por tenant
+ * Cada caminhão tem suas próprias vendas
  */
 @Service
 @RequiredArgsConstructor
@@ -40,78 +34,117 @@ public class VendaService {
     // ===== OPERAÇÕES DE CONSULTA =====
 
     /**
-     * Lista todas as vendas ordenadas por data (mais recentes primeiro)
+     * Lista todas as vendas do tenant atual ordenadas por data (mais recentes primeiro)
      */
     public List<VendaDTO> listarTodasVendas() {
-        log.debug("Listando todas as vendas");
+        log.debug("Listando todas as vendas do tenant: {}", TenantContext.getCurrentTenantValue());
 
-        List<Venda> vendas = vendaRepository.findAllByOrderByDataVendaDesc();
+        String tenantId = TenantContext.getCurrentTenantValue();
+        if (tenantId == null) {
+            tenantId = "vermelho"; // Default
+        }
+
+        List<Venda> vendas = vendaRepository.findByTenantIdOrderByDataVendaDesc(tenantId);
         return convertToDTO(vendas);
     }
 
     /**
-     * Lista vendas em um período específico
+     * Lista vendas em um período específico do tenant atual
      */
     public List<VendaDTO> listarVendasPorPeriodo(LocalDate dataInicio, LocalDate dataFim) {
-        log.debug("Listando vendas por período: {} a {}", dataInicio, dataFim);
+        log.debug("Listando vendas por período: {} a {} - Tenant: {}",
+                dataInicio, dataFim, TenantContext.getCurrentTenantValue());
 
         LocalDateTime inicio = determinarDataInicio(dataInicio);
         LocalDateTime fim = determinarDataFim(dataFim);
 
-        List<Venda> vendas = vendaRepository.findByDataVendaBetween(inicio, fim);
+        String tenantId = TenantContext.getCurrentTenantValue();
+        if (tenantId == null) {
+            tenantId = "vermelho"; // Default
+        }
 
-        return vendas.stream()
-                .sorted((v1, v2) -> v2.getDataVenda().compareTo(v1.getDataVenda()))
-                .map(this::convertToDTO)
-                .collect(Collectors.toList());
+        List<Venda> vendas = vendaRepository.findByTenantIdAndDataVendaBetweenOrderByDataVendaDesc(
+                tenantId, inicio, fim);
+
+        return convertToDTO(vendas);
     }
 
     /**
-     * Busca uma venda específica por ID
+     * Busca uma venda específica por ID (verificando se pertence ao tenant atual)
      */
     public Optional<VendaDTO> buscarVendaPorId(Long id) {
-        log.debug("Buscando venda por ID: {}", id);
+        log.debug("Buscando venda por ID: {} - Tenant: {}", id, TenantContext.getCurrentTenantValue());
 
         validarId(id);
-        return vendaRepository.findById(id).map(this::convertToDTO);
+
+        Optional<Venda> vendaOpt = vendaRepository.findById(id);
+        if (vendaOpt.isPresent()) {
+            Venda venda = vendaOpt.get();
+
+            // Verificar se a venda pertence ao tenant atual
+            String tenantAtual = TenantContext.getCurrentTenantValue();
+            if (tenantAtual != null && !tenantAtual.equals(venda.getTenantId())) {
+                log.warn("Tentativa de acesso a venda de outro tenant. Venda: {}, Tenant atual: {}, Tenant da venda: {}",
+                        id, tenantAtual, venda.getTenantId());
+                return Optional.empty();
+            }
+
+            return Optional.of(convertToDTO(venda));
+        }
+
+        return Optional.empty();
     }
 
     // ===== OPERAÇÕES DE RESUMO =====
 
     /**
-     * Obtém resumo de todas as vendas
+     * Obtém resumo de todas as vendas do tenant atual
      */
     public ResumoVendasDTO obterResumoVendas() {
-        log.debug("Calculando resumo de todas as vendas");
+        log.debug("Calculando resumo de todas as vendas - Tenant: {}", TenantContext.getCurrentTenantValue());
 
-        List<Venda> vendas = vendaRepository.findAll();
+        String tenantId = TenantContext.getCurrentTenantValue();
+        if (tenantId == null) {
+            tenantId = "vermelho"; // Default
+        }
+
+        List<Venda> vendas = vendaRepository.findByTenantId(tenantId);
         return calcularResumoVendas(vendas);
     }
 
     /**
-     * Obtém resumo de vendas por período
+     * Obtém resumo de vendas por período do tenant atual
      */
     public ResumoVendasDTO obterResumoVendasPorPeriodo(LocalDate dataInicio, LocalDate dataFim) {
-        log.debug("Calculando resumo de vendas por período: {} a {}", dataInicio, dataFim);
+        log.debug("Calculando resumo de vendas por período: {} a {} - Tenant: {}",
+                dataInicio, dataFim, TenantContext.getCurrentTenantValue());
 
         LocalDateTime inicio = determinarDataInicio(dataInicio);
         LocalDateTime fim = determinarDataFim(dataFim);
 
-        List<Venda> vendas = vendaRepository.findByDataVendaBetween(inicio, fim);
+        String tenantId = TenantContext.getCurrentTenantValue();
+        if (tenantId == null) {
+            tenantId = "vermelho"; // Default
+        }
+
+        List<Venda> vendas = vendaRepository.findByTenantIdAndDataVendaBetween(tenantId, inicio, fim);
         return calcularResumoVendas(vendas);
     }
 
     // ===== OPERAÇÕES DE MODIFICAÇÃO =====
 
     /**
-     * Cria uma nova venda SEM verificação de estoque
-     *
-     * MODIFICAÇÃO: Removida a verificação de estoque suficiente
-     * Agora permite vendas mesmo com estoque insuficiente (estoque pode ficar negativo)
+     * Cria uma nova venda para o tenant atual
      */
     @Transactional
     public VendaDTO criarVenda(VendaCreateDTO vendaCreateDTO) {
-        log.info("Iniciando criação de venda tipo: {}", vendaCreateDTO.getTipoVenda());
+        String tenantId = TenantContext.getCurrentTenantValue();
+        if (tenantId == null) {
+            tenantId = "vermelho"; // Default
+        }
+
+        log.info("Iniciando criação de venda tipo: {} - Tenant: {}",
+                vendaCreateDTO.getTipoVenda(), tenantId);
 
         try {
             // 1. Validações básicas
@@ -120,33 +153,35 @@ public class VendaService {
             // 2. Validação específica por tipo
             validarDadosPorTipo(vendaCreateDTO);
 
-            // 3. REMOÇÃO: Não há mais verificação de estoque
-            // A venda pode ser realizada mesmo com estoque insuficiente
-
-            // 4. Criar e persistir venda
+            // 3. Construir venda com tenant
             Venda venda = construirVenda(vendaCreateDTO);
+            venda.setTenantId(tenantId);
+
+            // 4. Salvar venda
             venda = vendaRepository.save(venda);
 
             // 5. Atualizar estoque (pode ficar negativo)
             atualizarEstoqueSemValidacao(venda);
 
             // 6. Log de sucesso
-            log.info("Venda criada com sucesso. ID: {}, Tipo: {}", venda.getId(), venda.getTipoVenda());
+            log.info("Venda criada com sucesso. ID: {}, Tipo: {}, Tenant: {}",
+                    venda.getId(), venda.getTipoVenda(), tenantId);
 
             return convertToDTO(venda);
 
         } catch (Exception e) {
-            log.error("Erro ao criar venda: {}", e.getMessage(), e);
+            log.error("Erro ao criar venda para tenant {}: {}", tenantId, e.getMessage(), e);
             throw e;
         }
     }
 
     /**
-     * Atualiza uma venda existente (campos editáveis apenas)
+     * Atualiza uma venda existente (verificando se pertence ao tenant atual)
      */
     @Transactional
     public VendaDTO atualizarVenda(Long id, VendaDTO vendaDTO) {
-        log.info("Iniciando atualização da venda ID: {}", id);
+        String tenantId = TenantContext.getCurrentTenantValue();
+        log.info("Iniciando atualização da venda ID: {} - Tenant: {}", id, tenantId);
 
         try {
             validarId(id);
@@ -154,30 +189,41 @@ public class VendaService {
 
             Venda venda = buscarVendaOuLancarExcecao(id);
 
+            // Verificar se a venda pertence ao tenant atual
+            if (tenantId != null && !tenantId.equals(venda.getTenantId())) {
+                throw new SecurityException("Não é possível editar venda de outro caminhão");
+            }
+
             // Atualizar apenas campos editáveis (sem mexer no estoque)
             atualizarCamposEditaveis(venda, vendaDTO);
 
             venda = vendaRepository.save(venda);
 
-            log.info("Venda atualizada com sucesso. ID: {}", id);
+            log.info("Venda atualizada com sucesso. ID: {} - Tenant: {}", id, tenantId);
             return convertToDTO(venda);
 
         } catch (Exception e) {
-            log.error("Erro ao atualizar venda ID {}: {}", id, e.getMessage(), e);
+            log.error("Erro ao atualizar venda ID {} para tenant {}: {}", id, tenantId, e.getMessage(), e);
             throw e;
         }
     }
 
     /**
-     * Deleta uma venda e reverte o estoque automaticamente
+     * Deleta uma venda e reverte o estoque automaticamente (verificando tenant)
      */
     @Transactional
     public void deletarVenda(Long id) {
-        log.info("Iniciando exclusão da venda ID: {}", id);
+        String tenantId = TenantContext.getCurrentTenantValue();
+        log.info("Iniciando exclusão da venda ID: {} - Tenant: {}", id, tenantId);
 
         try {
             validarId(id);
             Venda venda = buscarVendaOuLancarExcecao(id);
+
+            // Verificar se a venda pertence ao tenant atual
+            if (tenantId != null && !tenantId.equals(venda.getTenantId())) {
+                throw new SecurityException("Não é possível excluir venda de outro caminhão");
+            }
 
             // Reverter estoque antes de deletar
             reverterEstoqueSeNecessario(venda);
@@ -185,10 +231,11 @@ public class VendaService {
             // Deletar venda
             vendaRepository.delete(venda);
 
-            log.info("Venda deletada com sucesso. ID: {}, Estoque revertido automaticamente", id);
+            log.info("Venda deletada com sucesso. ID: {}, Estoque revertido automaticamente - Tenant: {}",
+                    id, tenantId);
 
         } catch (Exception e) {
-            log.error("Erro ao deletar venda ID {}: {}", id, e.getMessage(), e);
+            log.error("Erro ao deletar venda ID {} para tenant {}: {}", id, tenantId, e.getMessage(), e);
             throw new RuntimeException("Erro ao deletar venda: " + e.getMessage(), e);
         }
     }
@@ -267,12 +314,8 @@ public class VendaService {
         }
     }
 
-    // ===== OPERAÇÕES DE ESTOQUE (MODIFICADAS) =====
+    // ===== OPERAÇÕES DE ESTOQUE =====
 
-    /**
-     * NOVA IMPLEMENTAÇÃO: Atualiza estoque sem validação
-     * Permite que o estoque fique negativo
-     */
     private void atualizarEstoqueSemValidacao(Venda venda) {
         if (!precisaAtualizarEstoque(venda)) {
             return;
@@ -319,7 +362,6 @@ public class VendaService {
         } catch (Exception e) {
             log.error("Erro ao reverter estoque para venda ID {}: {}", venda.getId(), e.getMessage());
             // Não falha a exclusão da venda por erro na reversão do estoque
-            // mas registra o erro para auditoria
         }
     }
 
@@ -341,6 +383,7 @@ public class VendaService {
         if (vendaDTO.getPosteId() != null) {
             Poste poste = buscarPosteOuLancarExcecao(vendaDTO.getPosteId());
             validarPosteAtivo(poste);
+            validarPostePertenceAoTenant(poste);
             venda.setPoste(poste);
         }
 
@@ -380,6 +423,13 @@ public class VendaService {
     private void validarPosteAtivo(Poste poste) {
         if (!poste.getAtivo()) {
             throw new IllegalArgumentException("Poste inativo não pode ser usado em vendas");
+        }
+    }
+
+    private void validarPostePertenceAoTenant(Poste poste) {
+        String tenantAtual = TenantContext.getCurrentTenantValue();
+        if (tenantAtual != null && !tenantAtual.equals(poste.getTenantId())) {
+            throw new IllegalArgumentException("Poste não pertence ao caminhão atual");
         }
     }
 
