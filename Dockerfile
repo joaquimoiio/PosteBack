@@ -1,49 +1,32 @@
-# Use a imagem oficial do Maven com OpenJDK 17 para o build
-FROM maven:3.9-eclipse-temurin-17 AS build
+# Use uma imagem base do OpenJDK 17
+FROM openjdk:17-jdk-slim
+
+# Instalar Maven
+RUN apt-get update && apt-get install -y maven && rm -rf /var/lib/apt/lists/*
+
+# Definir variáveis de ambiente para codificação
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+ENV MAVEN_OPTS="-Dfile.encoding=UTF-8 -Dproject.build.sourceEncoding=UTF-8"
 
 # Definir diretório de trabalho
 WORKDIR /app
 
-# Copiar arquivos do projeto backend da pasta posteback
-COPY posteback/pom.xml ./
-COPY posteback/src ./src/
+# Copiar arquivos do projeto
+COPY pom.xml .
+COPY src ./src
+COPY mvnw .
+COPY mvnw.cmd .
+COPY .mvn ./.mvn
 
-# Debug: Mostrar estrutura de arquivos
-RUN echo "=== ESTRUTURA DE ARQUIVOS ===" && \
-    echo "Arquivos na raiz:" && ls -la && \
-    echo "Arquivos em src:" && ls -la src/ && \
-    echo "Conteúdo do pom.xml:" && head -10 pom.xml
+# Dar permissão de execução para o mvnw
+RUN chmod +x mvnw
 
-# Fazer o build da aplicação
-RUN mvn clean package -DskipTests
+# Limpar e construir o projeto
+RUN mvn clean package -DskipTests -Dfile.encoding=UTF-8
 
-# Debug: Mostrar o que foi gerado no target
-RUN echo "=== ARQUIVOS GERADOS ===" && ls -la target/
-
-# Estágio final - imagem mínima para execução
-FROM eclipse-temurin:17-jre-alpine
-
-# Instalar curl para health check
-RUN apk add --no-cache curl
-
-# Criar diretório para a aplicação
-WORKDIR /app
-
-# Copiar o JAR do estágio de build
-COPY --from=build /app/target/vendas-postes-1.0.0.jar app.jar
-
-# Verificar se o JAR foi copiado
-RUN ls -la app.jar
-
-# Expor a porta 8080
+# Expor porta
 EXPOSE 8080
 
-# Variáveis de ambiente padrão
-ENV JAVA_OPTS="-Xmx512m -Xms256m"
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-  CMD curl -f http://localhost:8080/api/postes || exit 1
-
 # Comando para executar a aplicação
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
+CMD ["java", "-jar", "-Dfile.encoding=UTF-8", "target/vendas-postes-1.0.0.jar"]
