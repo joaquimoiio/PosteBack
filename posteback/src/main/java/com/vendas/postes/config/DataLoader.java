@@ -3,6 +3,7 @@ package com.vendas.postes.config;
 import com.vendas.postes.model.Poste;
 import com.vendas.postes.repository.PosteRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
@@ -16,6 +17,7 @@ import java.util.List;
  */
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class DataLoader implements CommandLineRunner {
 
     private final PosteRepository posteRepository;
