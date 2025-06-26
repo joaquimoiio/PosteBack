@@ -1,8 +1,8 @@
 # Use uma imagem base do OpenJDK 17
 FROM openjdk:17-jdk-slim
 
-# Instalar Maven
-RUN apt-get update && apt-get install -y maven && rm -rf /var/lib/apt/lists/*
+# Instalar Maven e curl
+RUN apt-get update && apt-get install -y maven curl && rm -rf /var/lib/apt/lists/*
 
 # Definir variáveis de ambiente para codificação
 ENV LANG=C.UTF-8
@@ -12,17 +12,23 @@ ENV MAVEN_OPTS="-Dfile.encoding=UTF-8 -Dproject.build.sourceEncoding=UTF-8"
 # Definir diretório de trabalho
 WORKDIR /app
 
-# Copiar arquivos do projeto
-COPY pom.xml .
-COPY src ./src
-COPY mvnw .
-COPY mvnw.cmd .
-COPY .mvn ./.mvn
+# Primeiro, copiar apenas o pom.xml para cache de dependências
+COPY posteback/pom.xml .
 
-# Dar permissão de execução para o mvnw
-RUN chmod +x mvnw
+# Baixar dependências (será cacheado se pom.xml não mudar)
+RUN mvn dependency:go-offline -B
 
-# Limpar e construir o projeto
+# Copiar o código fonte
+COPY posteback/src ./src
+
+# Copiar arquivos do Maven Wrapper (se existirem)
+COPY posteback/mvnw* ./
+COPY posteback/.mvn ./.mvn
+
+# Dar permissão de execução para o mvnw (se existir)
+RUN if [ -f "./mvnw" ]; then chmod +x mvnw; fi
+
+# Limpar e construir o projeto usando Maven instalado
 RUN mvn clean package -DskipTests -Dfile.encoding=UTF-8
 
 # Expor porta

@@ -10,9 +10,9 @@
 *.iws
 .vscode
 
-# Maven
+# Maven target (manter apenas o da estrutura final)
 posteback/target
-posteback/.mvn
+posteback/.mvn/wrapper/maven-wrapper.jar
 
 # Logs
 *.log
@@ -28,3 +28,8 @@ README.md
 # Outros
 .DS_Store
 Thumbs.db
+
+# Arquivos de configuração local
+docker-compose.override.yml
+.env
+.env.local

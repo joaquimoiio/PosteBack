@@ -16,7 +16,9 @@ services:
       - vendas-network
 
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: vendas-postes-app
     depends_on:
       - postgres
