@@ -12,8 +12,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * DataLoader atualizado com separação por tenant
- * Cada poste agora tem um campo tenant_id para identificar qual caminhão
+ * DataLoader com debug melhorado para verificar carregamento por tenant
  */
 @Component
 @RequiredArgsConstructor
@@ -25,15 +24,66 @@ public class DataLoader implements CommandLineRunner {
     @Override
     public void run(String... args) throws Exception {
         try {
-            if (posteRepository.count() == 0) {
-                log.info("Carregando dados iniciais...");
+            log.info("🚀 Iniciando verificação de dados...");
+
+            long totalPostes = posteRepository.count();
+            long postesVermelho = posteRepository.findByTenantId("vermelho").size();
+            long postesBranco = posteRepository.findByTenantId("branco").size();
+
+            log.info("📊 Status atual do banco:");
+            log.info("   Total de postes: {}", totalPostes);
+            log.info("   Postes VERMELHO: {}", postesVermelho);
+            log.info("   Postes BRANCO: {}", postesBranco);
+
+            if (totalPostes == 0) {
+                log.info("🔄 Banco vazio - Carregando dados iniciais...");
                 carregarPostesPorTenant();
-                log.info("✅ Postes carregados com separação por tenant");
+
+                // Verificar novamente após carregamento
+                totalPostes = posteRepository.count();
+                postesVermelho = posteRepository.findByTenantId("vermelho").size();
+                postesBranco = posteRepository.findByTenantId("branco").size();
+
+                log.info("✅ Dados carregados com sucesso!");
+                log.info("📊 Status final:");
+                log.info("   Total de postes: {}", totalPostes);
+                log.info("   Postes VERMELHO: {}", postesVermelho);
+                log.info("   Postes BRANCO: {}", postesBranco);
+
             } else {
-                log.info("Dados já existem no banco. Total de postes: {}", posteRepository.count());
+                log.info("ℹ️ Dados já existem no banco.");
+
+                // Verificar se há problemas de distribuição
+                if (postesVermelho == 0) {
+                    log.warn("⚠️ PROBLEMA: Nenhum poste encontrado para tenant VERMELHO!");
+                }
+                if (postesBranco == 0) {
+                    log.warn("⚠️ PROBLEMA: Nenhum poste encontrado para tenant BRANCO!");
+                    log.info("🔧 Tentando adicionar postes para tenant BRANCO...");
+                    adicionarPostesBranco();
+                    postesBranco = posteRepository.findByTenantId("branco").size();
+                    log.info("✅ Postes BRANCO após correção: {}", postesBranco);
+                }
             }
+
+            // Log detalhado dos primeiros postes de cada tenant para debug
+            List<Poste> amostrasVermelho = posteRepository.findByTenantId("vermelho");
+            List<Poste> amostrasBranco = posteRepository.findByTenantId("branco");
+
+            if (!amostrasVermelho.isEmpty()) {
+                log.debug("🔴 Exemplo poste VERMELHO: {} - {}",
+                        amostrasVermelho.get(0).getCodigo(),
+                        amostrasVermelho.get(0).getDescricao());
+            }
+
+            if (!amostrasBranco.isEmpty()) {
+                log.debug("⚪ Exemplo poste BRANCO: {} - {}",
+                        amostrasBranco.get(0).getCodigo(),
+                        amostrasBranco.get(0).getDescricao());
+            }
+
         } catch (Exception e) {
-            log.error("❌ Erro ao carregar dados iniciais: ", e);
+            log.error("❌ Erro crítico ao carregar dados iniciais: ", e);
             throw e;
         }
     }
@@ -75,6 +125,16 @@ public class DataLoader implements CommandLineRunner {
                 createPoste("389", "Padrão de agua", new BigDecimal("200.00"), "vermelho")
         );
 
+        // Salvar postes VERMELHO
+        log.info("💾 Salvando {} postes para tenant VERMELHO...", postesVermelho.size());
+        List<Poste> savedVermelho = posteRepository.saveAll(postesVermelho);
+        log.info("✅ Salvos {} postes VERMELHO", savedVermelho.size());
+
+        // Carregar postes BRANCO
+        adicionarPostesBranco();
+    }
+
+    private void adicionarPostesBranco() {
         // Postes do Caminhão Branco
         List<Poste> postesBranco = Arrays.asList(
                 // Kit Poste 7m - Monofásico - BRANCO
@@ -105,14 +165,9 @@ public class DataLoader implements CommandLineRunner {
                 createPoste("389-B", "Padrão de agua - Branco", new BigDecimal("200.00"), "branco")
         );
 
-        // Salvar todos os postes
-        posteRepository.saveAll(postesVermelho);
-        posteRepository.saveAll(postesBranco);
-
-        System.out.println("📊 Postes carregados:");
-        System.out.println("🚛 Caminhão Vermelho: " + postesVermelho.size() + " postes");
-        System.out.println("🚚 Caminhão Branco: " + postesBranco.size() + " postes");
-        System.out.println("📦 Total: " + (postesVermelho.size() + postesBranco.size()) + " postes");
+        log.info("💾 Salvando {} postes para tenant BRANCO...", postesBranco.size());
+        List<Poste> savedBranco = posteRepository.saveAll(postesBranco);
+        log.info("✅ Salvos {} postes BRANCO", savedBranco.size());
     }
 
     private Poste createPoste(String codigo, String descricao, BigDecimal preco, String tenantId) {
@@ -122,6 +177,9 @@ public class DataLoader implements CommandLineRunner {
         poste.setPreco(preco);
         poste.setAtivo(true);
         poste.setTenantId(tenantId);
+
+        log.debug("📦 Criando poste: {} - {} (tenant: {})", codigo, descricao, tenantId);
+
         return poste;
     }
 }
