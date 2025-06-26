@@ -1,19 +1,23 @@
 # Use uma imagem base do OpenJDK 17
 FROM openjdk:17-jdk-slim
 
-# Instalar Maven e curl
-RUN apt-get update && apt-get install -y maven curl && rm -rf /var/lib/apt/lists/*
+# Instalar Maven, curl e ferramentas de encoding
+RUN apt-get update && \
+    apt-get install -y maven curl locales && \
+    locale-gen en_US.UTF-8 && \
+    rm -rf /var/lib/apt/lists/*
 
 # Definir variáveis de ambiente para codificação
-ENV LANG=C.UTF-8
-ENV LC_ALL=C.UTF-8
-ENV MAVEN_OPTS="-Dfile.encoding=UTF-8 -Dproject.build.sourceEncoding=UTF-8"
+ENV LANG=en_US.UTF-8
+ENV LANGUAGE=en_US:en
+ENV LC_ALL=en_US.UTF-8
+ENV MAVEN_OPTS="-Dfile.encoding=UTF-8 -Dproject.build.sourceEncoding=UTF-8 -Dproject.reporting.outputEncoding=UTF-8"
 
 # Definir diretório de trabalho
 WORKDIR /app
 
-# Primeiro, copiar apenas o pom.xml para cache de dependências
-COPY posteback/pom.xml .
+# Copiar apenas o pom.xml primeiro para cache de dependências
+COPY posteback/pom.xml ./
 
 # Baixar dependências (será cacheado se pom.xml não mudar)
 RUN mvn dependency:go-offline -B
@@ -21,18 +25,21 @@ RUN mvn dependency:go-offline -B
 # Copiar o código fonte
 COPY posteback/src ./src
 
-# Copiar arquivos do Maven Wrapper (se existirem)
-COPY posteback/mvnw* ./
-COPY posteback/.mvn ./.mvn
+# Criar application.properties se não existir ou estiver corrompido
+RUN echo "# Configuracao de producao" > src/main/resources/application.properties && \
+    echo "server.port=8080" >> src/main/resources/application.properties && \
+    echo "spring.application.name=vendas-postes" >> src/main/resources/application.properties && \
+    echo "spring.jpa.hibernate.ddl-auto=update" >> src/main/resources/application.properties && \
+    echo "spring.jpa.show-sql=false" >> src/main/resources/application.properties
 
-# Dar permissão de execução para o mvnw (se existir)
-RUN if [ -f "./mvnw" ]; then chmod +x mvnw; fi
-
-# Limpar e construir o projeto usando Maven instalado
-RUN mvn clean package -DskipTests -Dfile.encoding=UTF-8
+# Limpar e construir o projeto
+RUN mvn clean package -DskipTests \
+    -Dfile.encoding=UTF-8 \
+    -Dproject.build.sourceEncoding=UTF-8 \
+    -Dproject.reporting.outputEncoding=UTF-8
 
 # Expor porta
 EXPOSE 8080
 
 # Comando para executar a aplicação
-CMD ["java", "-jar", "-Dfile.encoding=UTF-8", "target/vendas-postes-1.0.0.jar"]
+CMD ["java", "-jar", "-Dfile.encoding=UTF-8", "-Dspring.profiles.active=production", "target/vendas-postes-1.0.0.jar"]

@@ -1,24 +1,23 @@
-# Ignorar arquivos desnecessários para o build Docker
-
 # Git
 .git
 .gitignore
+.gitattributes
 
 # IDE
-.idea
+.idea/
 *.iml
 *.iws
-.vscode
+.vscode/
 
-# Maven target (manter apenas o da estrutura final)
-posteback/target
+# Maven
+posteback/target/
 posteback/.mvn/wrapper/maven-wrapper.jar
 
 # Logs
 *.log
 
-# Node modules (se houver frontend)
-node_modules
+# Node (se houver)
+node_modules/
 npm-debug.log*
 
 # Documentação
@@ -29,7 +28,14 @@ README.md
 .DS_Store
 Thumbs.db
 
+# Docker
+docker-compose*.yml
+Dockerfile*
+
 # Arquivos de configuração local
-docker-compose.override.yml
 .env
 .env.local
+
+# Arquivos temporários
+*.tmp
+*.temp
