@@ -17,10 +17,10 @@ public class CorsConfig implements WebMvcConfigurer {
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/**")
-                .allowedOriginPatterns("*")
+                .allowedOrigins("*") // Mudança aqui - removendo credentials
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD")
                 .allowedHeaders("*")
-                .allowCredentials(true)
+                .allowCredentials(false) // Mudança aqui - desabilitando credentials
                 .maxAge(3600);
     }
 
@@ -28,8 +28,8 @@ public class CorsConfig implements WebMvcConfigurer {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        // Permitir todos os origins
-        configuration.setAllowedOriginPatterns(List.of("*"));
+        // Permitir origens específicas - SEM credentials para permitir *
+        configuration.setAllowedOrigins(Arrays.asList("*"));
 
         // Permitir todos os métodos HTTP
         configuration.setAllowedMethods(Arrays.asList(
@@ -39,13 +39,12 @@ public class CorsConfig implements WebMvcConfigurer {
         // Permitir todos os headers
         configuration.setAllowedHeaders(List.of("*"));
 
-        // Permitir credentials
-        configuration.setAllowCredentials(true);
+        // DESABILITAR credentials para permitir origem *
+        configuration.setAllowCredentials(false);
 
         // Headers expostos
         configuration.setExposedHeaders(Arrays.asList(
                 "Access-Control-Allow-Origin",
-                "Access-Control-Allow-Credentials",
                 "Access-Control-Allow-Methods",
                 "Access-Control-Allow-Headers",
                 "Access-Control-Max-Age",
