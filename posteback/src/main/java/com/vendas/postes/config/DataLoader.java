@@ -22,9 +22,17 @@ public class DataLoader implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
-        if (posteRepository.count() == 0) {
-            carregarPostesPorTenant();
-            System.out.println("✅ Postes carregados com separação por tenant");
+        try {
+            if (posteRepository.count() == 0) {
+                log.info("Carregando dados iniciais...");
+                carregarPostesPorTenant();
+                log.info("✅ Postes carregados com separação por tenant");
+            } else {
+                log.info("Dados já existem no banco. Total de postes: {}", posteRepository.count());
+            }
+        } catch (Exception e) {
+            log.error("❌ Erro ao carregar dados iniciais: ", e);
+            throw e;
         }
     }
 

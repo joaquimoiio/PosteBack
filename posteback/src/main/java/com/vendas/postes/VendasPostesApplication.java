@@ -9,6 +9,11 @@ import org.springframework.web.bind.annotation.CrossOrigin;
 public class VendasPostesApplication {
 
 	public static void main(String[] args) {
-		SpringApplication.run(VendasPostesApplication.class, args);
+		try {
+			SpringApplication.run(VendasPostesApplication.class, args);
+		} catch (Exception e) {
+			System.err.println("❌ Erro ao iniciar aplicação: " + e.getMessage());
+			e.printStackTrace();
+		}
 	}
 }
