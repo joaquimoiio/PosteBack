@@ -2,6 +2,7 @@ package com.vendas.postes.config;
 
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -18,6 +19,19 @@ public class TenantFilter implements Filter {
             throws IOException, ServletException {
 
         HttpServletRequest httpRequest = (HttpServletRequest) request;
+        HttpServletResponse httpResponse = (HttpServletResponse) response;
+
+        // Adicionar headers CORS
+        httpResponse.setHeader("Access-Control-Allow-Origin", "*");
+        httpResponse.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+        httpResponse.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Tenant-ID");
+        httpResponse.setHeader("Access-Control-Max-Age", "3600");
+
+        // Handle preflight requests
+        if ("OPTIONS".equalsIgnoreCase(httpRequest.getMethod())) {
+            httpResponse.setStatus(HttpServletResponse.SC_OK);
+            return;
+        }
 
         try {
             String tenantId = extractTenant(httpRequest);
@@ -27,8 +41,18 @@ public class TenantFilter implements Filter {
             log.debug("Tenant definido para requisição {}: {}", httpRequest.getRequestURI(), tenant.getValue());
 
             chain.doFilter(request, response);
+
         } catch (Exception e) {
-            log.error("Erro no TenantFilter: ", e);
+            log.error("Erro no TenantFilter para URI {}: ", httpRequest.getRequestURI(), e);
+
+            // Se for uma requisição de API, retornar JSON
+            if (httpRequest.getRequestURI().startsWith("/api/")) {
+                httpResponse.setContentType("application/json");
+                httpResponse.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+                httpResponse.getWriter().write("{\"error\":\"Erro interno do servidor\",\"message\":\"" + e.getMessage() + "\"}");
+                return;
+            }
+
             throw e;
         } finally {
             TenantContext.clear();
@@ -36,26 +60,38 @@ public class TenantFilter implements Filter {
     }
 
     private String extractTenant(HttpServletRequest request) {
-        // Prioridade: Header > Query Param > URL Path
-        String tenant = request.getHeader("X-Tenant-ID");
-        if (tenant != null && !tenant.trim().isEmpty()) {
-            log.debug("Tenant extraído do header: {}", tenant);
-            return tenant;
-        }
+        try {
+            // Prioridade: Header > Query Param > Default
+            String tenant = request.getHeader("X-Tenant-ID");
+            if (isValidTenant(tenant)) {
+                log.debug("Tenant extraído do header: {}", tenant);
+                return tenant;
+            }
 
-        tenant = request.getParameter("caminhao");
-        if (tenant != null && !tenant.trim().isEmpty()) {
-            log.debug("Tenant extraído do parâmetro: {}", tenant);
-            return tenant;
-        }
+            tenant = request.getParameter("caminhao");
+            if (isValidTenant(tenant)) {
+                log.debug("Tenant extraído do parâmetro: {}", tenant);
+                return tenant;
+            }
 
-        String path = request.getRequestURI();
-        if (path.contains("branco")) {
-            log.debug("Tenant extraído do path (branco): {}", path);
-            return "branco";
-        }
+            // Verificar URL para detectar automaticamente
+            String path = request.getRequestURI();
+            if (path.contains("branco") || path.contains("-branco")) {
+                log.debug("Tenant extraído do path (branco): {}", path);
+                return "branco";
+            }
 
-        log.debug("Usando tenant padrão: vermelho");
-        return "vermelho"; // Default
+            log.debug("Usando tenant padrão: vermelho");
+            return "vermelho"; // Default
+
+        } catch (Exception e) {
+            log.warn("Erro ao extrair tenant, usando padrão: {}", e.getMessage());
+            return "vermelho";
+        }
+    }
+
+    private boolean isValidTenant(String tenant) {
+        return tenant != null && !tenant.trim().isEmpty() &&
+                (tenant.equals("vermelho") || tenant.equals("branco"));
     }
 }
