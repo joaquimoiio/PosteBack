@@ -29,7 +29,8 @@ public class Estoque {
     @Column(name = "data_atualizacao", nullable = false)
     private LocalDateTime dataAtualizacao = LocalDateTime.now();
 
-    @Column(name = "tenant_id", nullable = false, length = 20)
+    // Removido nullable = false para permitir migração
+    @Column(name = "tenant_id", length = 20)
     private String tenantId = "vermelho";
 
     public Estoque(Poste poste, Integer quantidadeAtual) {
@@ -38,6 +39,14 @@ public class Estoque {
         this.dataAtualizacao = LocalDateTime.now();
         if (poste != null && poste.getTenantId() != null) {
             this.tenantId = poste.getTenantId();
+        }
+    }
+
+    @PrePersist
+    @PreUpdate
+    public void ensureTenantId() {
+        if (this.tenantId == null || this.tenantId.trim().isEmpty()) {
+            this.tenantId = "vermelho";
         }
     }
 

@@ -43,8 +43,17 @@ public class Venda {
     @Column(name = "observacoes", length = 1000)
     private String observacoes;
 
-    @Column(name = "tenant_id", nullable = false, length = 20)
+    // Removido nullable = false para permitir migração
+    @Column(name = "tenant_id", length = 20)
     private String tenantId = "vermelho";
+
+    @PrePersist
+    @PreUpdate
+    public void ensureTenantId() {
+        if (this.tenantId == null || this.tenantId.trim().isEmpty()) {
+            this.tenantId = "vermelho";
+        }
+    }
 
     public enum TipoVenda {
         E("Extra"),

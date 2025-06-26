@@ -28,6 +28,15 @@ public class Poste {
     @Column(nullable = false)
     private Boolean ativo = true;
 
-    @Column(name = "tenant_id", nullable = false, length = 20)
+    // Removido nullable = false para permitir migração
+    @Column(name = "tenant_id", length = 20)
     private String tenantId = "vermelho";
+
+    @PrePersist
+    @PreUpdate
+    public void ensureTenantId() {
+        if (this.tenantId == null || this.tenantId.trim().isEmpty()) {
+            this.tenantId = "vermelho";
+        }
+    }
 }

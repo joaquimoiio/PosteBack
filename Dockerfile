@@ -25,12 +25,20 @@ RUN mvn dependency:go-offline -B
 # Copiar o código fonte
 COPY posteback/src ./src
 
-# Criar application.properties se não existir ou estiver corrompido
+# Criar application.properties atualizado
 RUN echo "# Configuracao de producao" > src/main/resources/application.properties && \
-    echo "server.port=8080" >> src/main/resources/application.properties && \
+    echo "server.port=\${PORT:8080}" >> src/main/resources/application.properties && \
     echo "spring.application.name=vendas-postes" >> src/main/resources/application.properties && \
-    echo "spring.jpa.hibernate.ddl-auto=update" >> src/main/resources/application.properties && \
-    echo "spring.jpa.show-sql=false" >> src/main/resources/application.properties
+    echo "spring.datasource.url=\${SPRING_DATASOURCE_URL:jdbc:h2:mem:testdb}" >> src/main/resources/application.properties && \
+    echo "spring.datasource.username=\${SPRING_DATASOURCE_USERNAME:sa}" >> src/main/resources/application.properties && \
+    echo "spring.datasource.password=\${SPRING_DATASOURCE_PASSWORD:}" >> src/main/resources/application.properties && \
+    echo "spring.datasource.driver-class-name=\${SPRING_DATASOURCE_DRIVER:org.postgresql.Driver}" >> src/main/resources/application.properties && \
+    echo "spring.jpa.hibernate.ddl-auto=\${SPRING_JPA_HIBERNATE_DDL_AUTO:validate}" >> src/main/resources/application.properties && \
+    echo "spring.jpa.show-sql=\${SPRING_JPA_SHOW_SQL:false}" >> src/main/resources/application.properties && \
+    echo "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect" >> src/main/resources/application.properties && \
+    echo "spring.datasource.hikari.maximum-pool-size=10" >> src/main/resources/application.properties && \
+    echo "spring.datasource.hikari.minimum-idle=2" >> src/main/resources/application.properties && \
+    echo "logging.level.com.vendas.postes=INFO" >> src/main/resources/application.properties
 
 # Limpar e construir o projeto
 RUN mvn clean package -DskipTests \
@@ -38,8 +46,8 @@ RUN mvn clean package -DskipTests \
     -Dproject.build.sourceEncoding=UTF-8 \
     -Dproject.reporting.outputEncoding=UTF-8
 
-# Expor porta
-EXPOSE 8080
+# Expor porta (será definida pelo Render)
+EXPOSE ${PORT:-8080}
 
-# Comando para executar a aplicação
-CMD ["java", "-jar", "-Dfile.encoding=UTF-8", "-Dspring.profiles.active=production", "target/vendas-postes-1.0.0.jar"]
+# Comando para executar a aplicação com variáveis de ambiente
+CMD ["sh", "-c", "java -jar -Dfile.encoding=UTF-8 -Dspring.profiles.active=${SPRING_PROFILES_ACTIVE:-production} -Dserver.port=${PORT:-8080} target/vendas-postes-1.0.0.jar"]
