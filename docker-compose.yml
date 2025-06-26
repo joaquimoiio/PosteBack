@@ -1,38 +1,21 @@
 version: '3.8'
 
 services:
-  postgres:
-    image: postgres:15
-    container_name: vendas-postes-db
-    environment:
-      POSTGRES_DB: vendas_postes
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - vendas-network
-
+  # Removemos o serviço postgres local, pois vamos usar o Render
   app:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: vendas-postes-app
-    depends_on:
-      - postgres
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/vendas_postes
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_DATASOURCE_URL: jdbc:postgresql://dpg-d1bg2895pdvs73dsavg0-a:5432/ativaposte
+      SPRING_DATASOURCE_USERNAME: admin
+      SPRING_DATASOURCE_PASSWORD: aa303O04NteXaSLTrM0uOQ14Q2VnRKIw
+      SPRING_PROFILES_ACTIVE: production
     ports:
       - "8080:8080"
     networks:
       - vendas-network
-
-volumes:
-  postgres_data:
 
 networks:
   vendas-network:
