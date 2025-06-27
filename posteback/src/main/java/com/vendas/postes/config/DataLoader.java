@@ -31,9 +31,9 @@ public class DataLoader implements CommandLineRunner {
             long postesBranco = posteRepository.findByTenantId("branco").size();
 
             log.info("📊 Status atual do banco:");
-            log.info("   Total de postes: {}", totalPostes);
-            log.info("   Postes VERMELHO: {}", postesVermelho);
-            log.info("   Postes BRANCO: {}", postesBranco);
+            log.info(" Total de postes: {}", totalPostes);
+            log.info(" Postes VERMELHO: {}", postesVermelho);
+            log.info(" Postes BRANCO: {}", postesBranco);
 
             if (totalPostes == 0) {
                 log.info("🔄 Banco vazio - Carregando dados iniciais...");
@@ -46,10 +46,9 @@ public class DataLoader implements CommandLineRunner {
 
                 log.info("✅ Dados carregados com sucesso!");
                 log.info("📊 Status final:");
-                log.info("   Total de postes: {}", totalPostes);
-                log.info("   Postes VERMELHO: {}", postesVermelho);
-                log.info("   Postes BRANCO: {}", postesBranco);
-
+                log.info(" Total de postes: {}", totalPostes);
+                log.info(" Postes VERMELHO: {}", postesVermelho);
+                log.info(" Postes BRANCO: {}", postesBranco);
             } else {
                 log.info("ℹ️ Dados já existem no banco.");
 
@@ -57,6 +56,7 @@ public class DataLoader implements CommandLineRunner {
                 if (postesVermelho == 0) {
                     log.warn("⚠️ PROBLEMA: Nenhum poste encontrado para tenant VERMELHO!");
                 }
+
                 if (postesBranco == 0) {
                     log.warn("⚠️ PROBLEMA: Nenhum poste encontrado para tenant BRANCO!");
                     log.info("🔧 Tentando adicionar postes para tenant BRANCO...");
@@ -64,22 +64,22 @@ public class DataLoader implements CommandLineRunner {
                     postesBranco = posteRepository.findByTenantId("branco").size();
                     log.info("✅ Postes BRANCO após correção: {}", postesBranco);
                 }
-            }
 
-            // Log detalhado dos primeiros postes de cada tenant para debug
-            List<Poste> amostrasVermelho = posteRepository.findByTenantId("vermelho");
-            List<Poste> amostrasBranco = posteRepository.findByTenantId("branco");
+                // Log detalhado dos primeiros postes de cada tenant para debug
+                List<Poste> amostrasVermelho = posteRepository.findByTenantId("vermelho");
+                List<Poste> amostrasBranco = posteRepository.findByTenantId("branco");
 
-            if (!amostrasVermelho.isEmpty()) {
-                log.debug("🔴 Exemplo poste VERMELHO: {} - {}",
-                        amostrasVermelho.get(0).getCodigo(),
-                        amostrasVermelho.get(0).getDescricao());
-            }
+                if (!amostrasVermelho.isEmpty()) {
+                    log.debug("🔴 Exemplo poste VERMELHO: {} - {}",
+                            amostrasVermelho.get(0).getCodigo(),
+                            amostrasVermelho.get(0).getDescricao());
+                }
 
-            if (!amostrasBranco.isEmpty()) {
-                log.debug("⚪ Exemplo poste BRANCO: {} - {}",
-                        amostrasBranco.get(0).getCodigo(),
-                        amostrasBranco.get(0).getDescricao());
+                if (!amostrasBranco.isEmpty()) {
+                    log.debug("⚪ Exemplo poste BRANCO: {} - {}",
+                            amostrasBranco.get(0).getCodigo(),
+                            amostrasBranco.get(0).getDescricao());
+                }
             }
 
         } catch (Exception e) {
@@ -150,8 +150,7 @@ public class DataLoader implements CommandLineRunner {
                 createPoste("91132", "Mureta Trifásica CB 16mm disjuntor 70A - Vermelho", new BigDecimal("820.00"), "vermelho"),
                 createPoste("389", "Mureta Água (Hidrômetro) - Vermelho", new BigDecimal("200.00"), "vermelho"),
                 createPoste("91241", "Mureta Mono - Vermelho", new BigDecimal("600.00"), "vermelho"),
-                createPoste("91242", "Mureta Trifásica - Vermelho", new BigDecimal("710.00"), "vermelho"),
-
+                createPoste("91242", "Mureta Trifásica - Vermelho", new BigDecimal("710.00"), "vermelho")
         );
 
         // Salvar postes VERMELHO
@@ -225,9 +224,8 @@ public class DataLoader implements CommandLineRunner {
                 createPoste("91132-B", "Mureta Trifásica CB 16mm disjuntor 70A - Branco", new BigDecimal("820.00"), "branco"),
                 createPoste("389-B", "Mureta Água (Hidrômetro) - Branco", new BigDecimal("200.00"), "branco"),
                 createPoste("91241-B", "Mureta Mono - Branco", new BigDecimal("600.00"), "branco"),
-                createPoste("91242-B", "Mureta Trifásica - Branco", new BigDecimal("710.00"), "branco"),
-
-                );
+                createPoste("91242-B", "Mureta Trifásica - Branco", new BigDecimal("710.00"), "branco")
+        );
 
         log.info("💾 Salvando {} postes para tenant BRANCO...", postesBranco.size());
         List<Poste> savedBranco = posteRepository.saveAll(postesBranco);
@@ -241,9 +239,7 @@ public class DataLoader implements CommandLineRunner {
         poste.setPreco(preco);
         poste.setAtivo(true);
         poste.setTenantId(tenantId);
-
         log.debug("📦 Criando poste: {} - {} (tenant: {})", codigo, descricao, tenantId);
-
         return poste;
     }
 }
