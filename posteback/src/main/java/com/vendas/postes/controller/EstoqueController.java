@@ -144,7 +144,7 @@ public class EstoqueController {
             String tenantAtual = TenantContext.getCurrentTenantValue();
 
             if (!"jefferson".equals(tenantAtual)) {
-                return ResponseEntity.forbidden().build();
+                return ResponseEntity.status(403).build(); // CORREÇÃO: usar status(403) ao invés de forbidden()
             }
 
             List<EstoqueDTO> estoque = estoqueService.listarTodoEstoque();
