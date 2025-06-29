@@ -55,9 +55,13 @@ public class VendaService {
         return Optional.empty();
     }
 
+    /**
+     * Cria uma venda e atualiza o estoque consolidado
+     */
     @Transactional
     public VendaDTO criarVenda(VendaCreateDTO vendaCreateDTO) {
         String tenantId = TenantContext.getCurrentTenantValue();
+        log.info("🛒 Criando venda para tenant: {} - Tipo: {}", tenantId, vendaCreateDTO.getTipoVenda());
 
         Venda venda = new Venda();
         venda.setDataVenda(vendaCreateDTO.getDataVenda());
@@ -77,14 +81,74 @@ public class VendaService {
 
         venda = vendaRepository.save(venda);
 
-        // Atualizar estoque se necessário
-        if (venda.getPoste() != null && venda.getQuantidade() != null) {
-            estoqueService.reduzirEstoque(venda.getPoste().getId(), venda.getQuantidade());
+        // ⚡ ATUALIZAR ESTOQUE CONSOLIDADO ⚡
+        // Só atualiza estoque para vendas tipo V e L (que envolvem postes)
+        if (venda.getPoste() != null && venda.getQuantidade() != null && venda.getQuantidade() > 0) {
+            log.info("📦 Reduzindo {} unidades do estoque consolidado para poste {} (código: {})",
+                    venda.getQuantidade(), venda.getPoste().getId(), venda.getPoste().getCodigo());
+
+            try {
+                estoqueService.reduzirEstoque(venda.getPoste().getId(), venda.getQuantidade());
+                log.info("✅ Estoque consolidado atualizado com sucesso");
+            } catch (Exception e) {
+                log.error("❌ Erro ao atualizar estoque consolidado: {}", e.getMessage());
+                // Continue mesmo se o estoque falhar - não queremos perder a venda
+            }
+        } else {
+            log.info("ℹ️ Venda tipo {} não afeta estoque", venda.getTipoVenda());
         }
 
+        log.info("✅ Venda criada com sucesso: ID {} para tenant {}", venda.getId(), tenantId);
         return convertToDTO(venda);
     }
 
+    /**
+     * Atualiza uma venda existente
+     */
+    @Transactional
+    public VendaDTO atualizarVenda(Long id, VendaCreateDTO vendaUpdateDTO) {
+        String tenantId = TenantContext.getCurrentTenantValue();
+
+        Venda vendaExistente = vendaRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Venda não encontrada"));
+
+        if (!tenantId.equals(vendaExistente.getTenantId())) {
+            throw new RuntimeException("Não é possível editar venda de outro caminhão");
+        }
+
+        // Reverter estoque da venda original se necessário
+        if (vendaExistente.getPoste() != null && vendaExistente.getQuantidade() != null) {
+            estoqueService.adicionarEstoque(vendaExistente.getPoste().getId(), vendaExistente.getQuantidade());
+        }
+
+        // Atualizar dados da venda
+        vendaExistente.setDataVenda(vendaUpdateDTO.getDataVenda());
+        vendaExistente.setQuantidade(vendaUpdateDTO.getQuantidade());
+        vendaExistente.setFreteEletrons(vendaUpdateDTO.getFreteEletrons());
+        vendaExistente.setValorVenda(vendaUpdateDTO.getValorVenda());
+        vendaExistente.setValorExtra(vendaUpdateDTO.getValorExtra());
+        vendaExistente.setObservacoes(vendaUpdateDTO.getObservacoes());
+
+        // Atualizar poste se necessário
+        if (vendaUpdateDTO.getPosteId() != null) {
+            Poste novoPoste = posteRepository.findById(vendaUpdateDTO.getPosteId())
+                    .orElseThrow(() -> new RuntimeException("Poste não encontrado"));
+            vendaExistente.setPoste(novoPoste);
+        }
+
+        vendaExistente = vendaRepository.save(vendaExistente);
+
+        // Aplicar novo desconto de estoque
+        if (vendaExistente.getPoste() != null && vendaExistente.getQuantidade() != null) {
+            estoqueService.reduzirEstoque(vendaExistente.getPoste().getId(), vendaExistente.getQuantidade());
+        }
+
+        return convertToDTO(vendaExistente);
+    }
+
+    /**
+     * Deleta uma venda e reverte o estoque
+     */
     @Transactional
     public void deletarVenda(Long id) {
         Venda venda = vendaRepository.findById(id)
@@ -95,12 +159,24 @@ public class VendaService {
             throw new RuntimeException("Não é possível excluir venda de outro caminhão");
         }
 
-        // Reverter estoque
-        if (venda.getPoste() != null && venda.getQuantidade() != null) {
-            estoqueService.adicionarEstoque(venda.getPoste().getId(), venda.getQuantidade());
+        log.info("🗑️ Excluindo venda ID: {} do tenant: {}", id, tenantAtual);
+
+        // ⚡ REVERTER ESTOQUE CONSOLIDADO ⚡
+        if (venda.getPoste() != null && venda.getQuantidade() != null && venda.getQuantidade() > 0) {
+            log.info("📦 Revertendo {} unidades para o estoque consolidado do poste {} (código: {})",
+                    venda.getQuantidade(), venda.getPoste().getId(), venda.getPoste().getCodigo());
+
+            try {
+                estoqueService.adicionarEstoque(venda.getPoste().getId(), venda.getQuantidade());
+                log.info("✅ Estoque consolidado revertido com sucesso");
+            } catch (Exception e) {
+                log.error("❌ Erro ao reverter estoque: {}", e.getMessage());
+                // Continue mesmo se falhar - não queremos impedir a exclusão
+            }
         }
 
         vendaRepository.delete(venda);
+        log.info("✅ Venda excluída com sucesso");
     }
 
     public ResumoVendasDTO obterResumoVendas() {
