@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -55,7 +56,7 @@ public class EstoqueController {
     }
 
     /**
-     * Adiciona estoque - funciona de forma consolidada
+     * Adiciona estoque - AGORA COM DATA - funciona de forma consolidada
      */
     @PostMapping("/adicionar")
     public ResponseEntity<EstoqueDTO> adicionarEstoque(@RequestBody Map<String, Object> request) {
@@ -69,6 +70,22 @@ public class EstoqueController {
             Long posteId = Long.valueOf(request.get("posteId").toString());
             Integer quantidade = Integer.valueOf(request.get("quantidade").toString());
 
+            // Nova validação para data
+            LocalDate dataEstoque = null;
+            if (request.containsKey("dataEstoque") && request.get("dataEstoque") != null) {
+                try {
+                    dataEstoque = LocalDate.parse(request.get("dataEstoque").toString());
+                } catch (Exception e) {
+                    log.warn("⚠️ Data de estoque inválida: {}", request.get("dataEstoque"));
+                    return ResponseEntity.badRequest().build();
+                }
+            } else {
+                dataEstoque = LocalDate.now(); // Data padrão
+            }
+
+            String observacao = request.containsKey("observacao") ?
+                    request.get("observacao").toString() : null;
+
             // Validações
             if (posteId <= 0) {
                 log.warn("⚠️ ID de poste inválido: {}", posteId);
@@ -80,10 +97,10 @@ public class EstoqueController {
                 return ResponseEntity.badRequest().build();
             }
 
-            log.info("➕ Adicionando {} unidades ao poste ID {} (tenant: {})",
-                    quantidade, posteId, TenantContext.getCurrentTenantValue());
+            log.info("➕ Adicionando {} unidades ao poste ID {} na data {} (tenant: {})",
+                    quantidade, posteId, dataEstoque, TenantContext.getCurrentTenantValue());
 
-            EstoqueDTO estoque = estoqueService.adicionarEstoque(posteId, quantidade);
+            EstoqueDTO estoque = estoqueService.adicionarEstoqueComData(posteId, quantidade, dataEstoque, observacao);
 
             log.info("✅ Estoque adicionado com sucesso");
             return ResponseEntity.ok(estoque);
@@ -101,7 +118,7 @@ public class EstoqueController {
     }
 
     /**
-     * Remove estoque manualmente (para ajustes)
+     * Remove estoque manualmente (para ajustes) - AGORA COM DATA
      */
     @PostMapping("/remover")
     public ResponseEntity<String> removerEstoque(@RequestBody Map<String, Object> request) {
@@ -113,14 +130,29 @@ public class EstoqueController {
             Long posteId = Long.valueOf(request.get("posteId").toString());
             Integer quantidade = Integer.valueOf(request.get("quantidade").toString());
 
+            // Data para remoção
+            LocalDate dataEstoque = null;
+            if (request.containsKey("dataEstoque") && request.get("dataEstoque") != null) {
+                try {
+                    dataEstoque = LocalDate.parse(request.get("dataEstoque").toString());
+                } catch (Exception e) {
+                    dataEstoque = LocalDate.now();
+                }
+            } else {
+                dataEstoque = LocalDate.now();
+            }
+
+            String observacao = request.containsKey("observacao") ?
+                    request.get("observacao").toString() : "Remoção manual";
+
             if (quantidade <= 0) {
                 return ResponseEntity.badRequest().body("Quantidade deve ser positiva");
             }
 
-            log.info("➖ Removendo {} unidades do poste ID {} (tenant: {})",
-                    quantidade, posteId, TenantContext.getCurrentTenantValue());
+            log.info("➖ Removendo {} unidades do poste ID {} na data {} (tenant: {})",
+                    quantidade, posteId, dataEstoque, TenantContext.getCurrentTenantValue());
 
-            estoqueService.reduzirEstoque(posteId, quantidade);
+            estoqueService.reduzirEstoqueComData(posteId, quantidade, dataEstoque, observacao);
 
             return ResponseEntity.ok("Estoque reduzido com sucesso");
 
@@ -144,7 +176,7 @@ public class EstoqueController {
             String tenantAtual = TenantContext.getCurrentTenantValue();
 
             if (!"jefferson".equals(tenantAtual)) {
-                return ResponseEntity.status(403).build(); // CORREÇÃO: usar status(403) ao invés de forbidden()
+                return ResponseEntity.status(403).build();
             }
 
             List<EstoqueDTO> estoque = estoqueService.listarTodoEstoque();

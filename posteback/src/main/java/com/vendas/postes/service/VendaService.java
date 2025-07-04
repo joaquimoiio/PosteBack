@@ -56,7 +56,7 @@ public class VendaService {
     }
 
     /**
-     * Cria uma venda e atualiza o estoque consolidado
+     * Cria uma venda e atualiza o estoque consolidado COM DATA
      */
     @Transactional
     public VendaDTO criarVenda(VendaCreateDTO vendaCreateDTO) {
@@ -81,14 +81,17 @@ public class VendaService {
 
         venda = vendaRepository.save(venda);
 
-        // ⚡ ATUALIZAR ESTOQUE CONSOLIDADO ⚡
+        // ⚡ ATUALIZAR ESTOQUE CONSOLIDADO COM DATA DA VENDA ⚡
         // Só atualiza estoque para vendas tipo V e L (que envolvem postes)
         if (venda.getPoste() != null && venda.getQuantidade() != null && venda.getQuantidade() > 0) {
-            log.info("📦 Reduzindo {} unidades do estoque consolidado para poste {} (código: {})",
-                    venda.getQuantidade(), venda.getPoste().getId(), venda.getPoste().getCodigo());
+            LocalDate dataVenda = venda.getDataVenda().toLocalDate();
+            String observacao = String.format("Venda %s - ID: %d", venda.getTipoVenda().name(), venda.getId());
+
+            log.info("📦 Reduzindo {} unidades do estoque consolidado para poste {} (código: {}) na data {}",
+                    venda.getQuantidade(), venda.getPoste().getId(), venda.getPoste().getCodigo(), dataVenda);
 
             try {
-                estoqueService.reduzirEstoque(venda.getPoste().getId(), venda.getQuantidade());
+                estoqueService.reduzirEstoqueComData(venda.getPoste().getId(), venda.getQuantidade(), dataVenda, observacao);
                 log.info("✅ Estoque consolidado atualizado com sucesso");
             } catch (Exception e) {
                 log.error("❌ Erro ao atualizar estoque consolidado: {}", e.getMessage());
@@ -103,7 +106,7 @@ public class VendaService {
     }
 
     /**
-     * Atualiza uma venda existente
+     * Atualiza uma venda existente COM CONTROLE DE DATA
      */
     @Transactional
     public VendaDTO atualizarVenda(Long id, VendaCreateDTO vendaUpdateDTO) {
@@ -116,9 +119,14 @@ public class VendaService {
             throw new RuntimeException("Não é possível editar venda de outro caminhão");
         }
 
-        // Reverter estoque da venda original se necessário
+        // Reverter estoque da venda original se necessário COM DATA ORIGINAL
         if (vendaExistente.getPoste() != null && vendaExistente.getQuantidade() != null) {
-            estoqueService.adicionarEstoque(vendaExistente.getPoste().getId(), vendaExistente.getQuantidade());
+            LocalDate dataOriginal = vendaExistente.getDataVenda().toLocalDate();
+            String observacaoReversao = String.format("Reversão venda %s - ID: %d (atualização)",
+                    vendaExistente.getTipoVenda().name(), vendaExistente.getId());
+
+            estoqueService.adicionarEstoqueComData(vendaExistente.getPoste().getId(),
+                    vendaExistente.getQuantidade(), dataOriginal, observacaoReversao);
         }
 
         // Atualizar dados da venda
@@ -138,16 +146,21 @@ public class VendaService {
 
         vendaExistente = vendaRepository.save(vendaExistente);
 
-        // Aplicar novo desconto de estoque
+        // Aplicar novo desconto de estoque COM NOVA DATA
         if (vendaExistente.getPoste() != null && vendaExistente.getQuantidade() != null) {
-            estoqueService.reduzirEstoque(vendaExistente.getPoste().getId(), vendaExistente.getQuantidade());
+            LocalDate novaData = vendaExistente.getDataVenda().toLocalDate();
+            String observacaoNova = String.format("Venda %s - ID: %d (atualizada)",
+                    vendaExistente.getTipoVenda().name(), vendaExistente.getId());
+
+            estoqueService.reduzirEstoqueComData(vendaExistente.getPoste().getId(),
+                    vendaExistente.getQuantidade(), novaData, observacaoNova);
         }
 
         return convertToDTO(vendaExistente);
     }
 
     /**
-     * Deleta uma venda e reverte o estoque
+     * Deleta uma venda e reverte o estoque COM DATA
      */
     @Transactional
     public void deletarVenda(Long id) {
@@ -161,13 +174,18 @@ public class VendaService {
 
         log.info("🗑️ Excluindo venda ID: {} do tenant: {}", id, tenantAtual);
 
-        // ⚡ REVERTER ESTOQUE CONSOLIDADO ⚡
+        // ⚡ REVERTER ESTOQUE CONSOLIDADO COM DATA DA VENDA ⚡
         if (venda.getPoste() != null && venda.getQuantidade() != null && venda.getQuantidade() > 0) {
-            log.info("📦 Revertendo {} unidades para o estoque consolidado do poste {} (código: {})",
-                    venda.getQuantidade(), venda.getPoste().getId(), venda.getPoste().getCodigo());
+            LocalDate dataVenda = venda.getDataVenda().toLocalDate();
+            String observacao = String.format("Reversão venda %s - ID: %d (exclusão)",
+                    venda.getTipoVenda().name(), venda.getId());
+
+            log.info("📦 Revertendo {} unidades para o estoque consolidado do poste {} (código: {}) na data {}",
+                    venda.getQuantidade(), venda.getPoste().getId(), venda.getPoste().getCodigo(), dataVenda);
 
             try {
-                estoqueService.adicionarEstoque(venda.getPoste().getId(), venda.getQuantidade());
+                estoqueService.adicionarEstoqueComData(venda.getPoste().getId(),
+                        venda.getQuantidade(), dataVenda, observacao);
                 log.info("✅ Estoque consolidado revertido com sucesso");
             } catch (Exception e) {
                 log.error("❌ Erro ao reverter estoque: {}", e.getMessage());

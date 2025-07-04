@@ -3,14 +3,17 @@ package com.vendas.postes.service;
 import com.vendas.postes.config.TenantContext;
 import com.vendas.postes.dto.EstoqueDTO;
 import com.vendas.postes.model.Estoque;
+import com.vendas.postes.model.MovimentoEstoque;
 import com.vendas.postes.model.Poste;
 import com.vendas.postes.repository.EstoqueRepository;
+import com.vendas.postes.repository.MovimentoEstoqueRepository;
 import com.vendas.postes.repository.PosteRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -21,6 +24,7 @@ public class EstoqueService {
 
     private final EstoqueRepository estoqueRepository;
     private final PosteRepository posteRepository;
+    private final MovimentoEstoqueRepository movimentoEstoqueRepository;
 
     /**
      * Lista todo o estoque consolidado - busca postes de ambos os caminhões
@@ -187,11 +191,11 @@ public class EstoqueService {
     }
 
     /**
-     * Adiciona estoque - SEMPRE usa o primeiro poste encontrado com o código
+     * Adiciona estoque COM DATA - SEMPRE usa o primeiro poste encontrado com o código
      */
     @Transactional
-    public EstoqueDTO adicionarEstoque(Long posteId, Integer quantidade) {
-        log.info("📦 Adicionando {} unidades ao estoque do poste ID: {}", quantidade, posteId);
+    public EstoqueDTO adicionarEstoqueComData(Long posteId, Integer quantidade, LocalDate dataEstoque, String observacao) {
+        log.info("📦 Adicionando {} unidades ao estoque do poste ID: {} na data: {}", quantidade, posteId, dataEstoque);
 
         Poste poste = posteRepository.findById(posteId)
                 .orElseThrow(() -> new RuntimeException("Poste não encontrado"));
@@ -199,27 +203,53 @@ public class EstoqueService {
         // Verificar se já existe estoque para este poste específico
         Optional<Estoque> estoqueOpt = estoqueRepository.findByPosteId(posteId);
 
+        Integer quantidadeAnterior;
         Estoque estoque;
+
         if (estoqueOpt.isPresent()) {
             estoque = estoqueOpt.get();
+            quantidadeAnterior = estoque.getQuantidadeAtual();
             estoque.adicionarQuantidade(quantidade);
         } else {
+            quantidadeAnterior = 0;
             estoque = new Estoque(poste, quantidade);
         }
 
         estoque = estoqueRepository.save(estoque);
 
-        log.info("✅ Estoque atualizado: {} unidades para {}", estoque.getQuantidadeAtual(), poste.getCodigo());
+        // Registrar movimento de estoque
+        MovimentoEstoque movimento = new MovimentoEstoque(
+                poste,
+                MovimentoEstoque.TipoMovimento.ENTRADA,
+                quantidade,
+                dataEstoque,
+                quantidadeAnterior,
+                estoque.getQuantidadeAtual(),
+                observacao
+        );
+
+        movimentoEstoqueRepository.save(movimento);
+
+        log.info("✅ Estoque atualizado: {} unidades para {} (anterior: {}, atual: {})",
+                quantidade, poste.getCodigo(), quantidadeAnterior, estoque.getQuantidadeAtual());
 
         return convertToDTO(estoque);
     }
 
     /**
-     * Reduz estoque - BUSCA PRIMEIRO POSTE DISPONÍVEL COM ESTOQUE
+     * Adiciona estoque - versão compatível (sem data)
      */
     @Transactional
-    public void reduzirEstoque(Long posteId, Integer quantidade) {
-        log.info("📤 Reduzindo {} unidades do estoque para poste ID: {}", quantidade, posteId);
+    public EstoqueDTO adicionarEstoque(Long posteId, Integer quantidade) {
+        return adicionarEstoqueComData(posteId, quantidade, LocalDate.now(), "Entrada de estoque");
+    }
+
+    /**
+     * Reduz estoque COM DATA - BUSCA PRIMEIRO POSTE DISPONÍVEL COM ESTOQUE
+     */
+    @Transactional
+    public void reduzirEstoqueComData(Long posteId, Integer quantidade, LocalDate dataEstoque, String observacao) {
+        log.info("📤 Reduzindo {} unidades do estoque para poste ID: {} na data: {}", quantidade, posteId, dataEstoque);
 
         Poste posteOriginal = posteRepository.findById(posteId)
                 .orElseThrow(() -> new RuntimeException("Poste não encontrado"));
@@ -242,8 +272,23 @@ public class EstoqueService {
 
                 if (quantidadeDisponivel > 0) {
                     int quantidadeAReduzir = Math.min(quantidadeRestante, quantidadeDisponivel);
+                    Integer quantidadeAnterior = estoque.getQuantidadeAtual();
+
                     estoque.removerQuantidade(quantidadeAReduzir);
                     estoqueRepository.save(estoque);
+
+                    // Registrar movimento
+                    MovimentoEstoque movimento = new MovimentoEstoque(
+                            poste,
+                            MovimentoEstoque.TipoMovimento.SAIDA,
+                            quantidadeAReduzir,
+                            dataEstoque,
+                            quantidadeAnterior,
+                            estoque.getQuantidadeAtual(),
+                            observacao
+                    );
+                    movimentoEstoqueRepository.save(movimento);
+
                     quantidadeRestante -= quantidadeAReduzir;
 
                     log.info("📉 Reduzido {} unidades do poste {} (restam {} no estoque)",
@@ -257,18 +302,42 @@ public class EstoqueService {
             Optional<Estoque> estoqueOriginalOpt = estoqueRepository.findByPosteId(posteId);
 
             Estoque estoqueOriginal;
+            Integer quantidadeAnterior;
+
             if (estoqueOriginalOpt.isPresent()) {
                 estoqueOriginal = estoqueOriginalOpt.get();
+                quantidadeAnterior = estoqueOriginal.getQuantidadeAtual();
                 estoqueOriginal.removerQuantidade(quantidadeRestante);
             } else {
+                quantidadeAnterior = 0;
                 estoqueOriginal = new Estoque(posteOriginal, -quantidadeRestante);
             }
 
             estoqueRepository.save(estoqueOriginal);
 
+            // Registrar movimento negativo
+            MovimentoEstoque movimento = new MovimentoEstoque(
+                    posteOriginal,
+                    MovimentoEstoque.TipoMovimento.SAIDA,
+                    quantidadeRestante,
+                    dataEstoque,
+                    quantidadeAnterior,
+                    estoqueOriginal.getQuantidadeAtual(),
+                    observacao + " (estoque negativo)"
+            );
+            movimentoEstoqueRepository.save(movimento);
+
             log.warn("⚠️ Estoque negativo criado para {} - faltaram {} unidades",
                     posteOriginal.getCodigo(), quantidadeRestante);
         }
+    }
+
+    /**
+     * Reduz estoque - versão compatível (sem data)
+     */
+    @Transactional
+    public void reduzirEstoque(Long posteId, Integer quantidade) {
+        reduzirEstoqueComData(posteId, quantidade, LocalDate.now(), "Saída de estoque");
     }
 
     public List<EstoqueDTO> listarEstoquesComQuantidade() {
